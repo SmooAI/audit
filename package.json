@@ -1,0 +1,111 @@
+{
+  "name": "@smooai/audit",
+  "version": "0.0.0",
+  "description": "A polyglot client SDK for tamper-evident, SQL-queryable audit logging: a canonical event schema, a per-org-per-day SHA-256 hash chain, and an emit client — with byte-for-byte parity across TypeScript, Python, Rust, Go, and .NET.",
+  "homepage": "https://github.com/SmooAI/audit#readme",
+  "bugs": {
+    "url": "https://github.com/SmooAI/audit/issues"
+  },
+  "license": "MIT",
+  "author": {
+    "name": "SmooAI",
+    "email": "brent@smooai.com",
+    "url": "https://smooai.com"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/SmooAI/audit.git"
+  },
+  "files": [
+    "dist/**"
+  ],
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.mts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.mts",
+        "default": "./dist/index.mjs"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      },
+      "default": "./dist/index.cjs"
+    },
+    "./*": {
+      "import": {
+        "types": "./dist/*.d.mts",
+        "default": "./dist/*.mjs"
+      },
+      "require": {
+        "types": "./dist/*.d.cts",
+        "default": "./dist/*.cjs"
+      }
+    }
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "pnpm tsdown && pnpm run python:build && pnpm run rust:build && pnpm run go:build",
+    "check-all": "pnpm run typecheck && pnpm run lint && pnpm run test && pnpm run rust:fmt:check && pnpm run rust:lint && pnpm run rust:test && pnpm run go:fmt:check && pnpm run go:lint && pnpm run go:test && pnpm run build",
+    "ci:publish": "node scripts/ci-publish.mjs",
+    "format": "oxfmt --write . && pnpm run python:format && pnpm run rust:fmt && pnpm run go:fmt",
+    "go:build": "(cd go && go build ./...)",
+    "go:fmt": "(cd go && gofmt -w .)",
+    "go:fmt:check": "(cd go && test -z \"$(gofmt -l .)\")",
+    "go:lint": "(cd go && go vet ./...)",
+    "go:test": "(cd go && go test -v ./...)",
+    "lint": "oxlint . && pnpm run python:lint && pnpm run rust:lint && pnpm run go:lint",
+    "lint:fix": "oxlint --fix . && pnpm run python:lint:fix",
+    "pre-commit-check": "(zsh .husky/pre-commit)",
+    "python:build": "(cd python && uv run poe build)",
+    "python:format": "(cd python && uv run poe format)",
+    "python:install-dev": "(cd python && uv run poe install-dev)",
+    "python:lint": "(cd python && uv run poe lint)",
+    "python:lint:fix": "(cd python && uv run poe lint:fix)",
+    "python:publish": "(cd python && uv run poe publish)",
+    "python:test": "(cd python && uv run poe test)",
+    "python:typecheck": "(cd python && uv run poe typecheck)",
+    "python:typecheck:errors": "(cd python && uv run poe typecheck-errors)",
+    "rust:build": "(cd rust/audit && cargo build --release)",
+    "rust:check": "(cd rust/audit && cargo check --all-targets)",
+    "rust:fmt": "(cd rust/audit && cargo fmt)",
+    "rust:fmt:check": "(cd rust/audit && cargo fmt --all -- --check)",
+    "rust:lint": "(cd rust/audit && cargo clippy --all-targets -- -D warnings)",
+    "rust:test": "(cd rust/audit && cargo test)",
+    "test": "vitest run --passWithNoTests && pnpm python:test && pnpm rust:test && pnpm go:test",
+    "typecheck": "tsc --noEmit --skipLibCheck && pnpm run python:typecheck:errors && pnpm run rust:check && pnpm run go:build",
+    "version:sync": "node scripts/sync-versions.mjs",
+    "watch": "tsdown --watch"
+  },
+  "dependencies": {
+    "zod": "^4.0.0"
+  },
+  "devDependencies": {
+    "@changesets/cli": "^2.28.1",
+    "@smooai/config-typescript": "^1.0.16",
+    "@types/node": "^22.13.10",
+    "oxfmt": "^0.28.0",
+    "oxlint": "^0.16.0",
+    "tsdown": "latest",
+    "vite": "^6.2.4",
+    "vite-tsconfig-paths": "^5.1.4",
+    "vitest": "^3.1.1"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "packageManager": "pnpm@10.6.1+sha512.40ee09af407fa9fbb5fbfb8e1cb40fbb74c0af0c3e10e9224d7b53c7658528615b2c92450e74cfad91e3a2dcafe3ce4050d80bda71d757756d2ce2b66213e9a3",
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@smooai/config-typescript"
+    ],
+    "ignoredBuiltDependencies": [
+      "@smooai/config-typescript",
+      "esbuild"
+    ]
+  }
+}

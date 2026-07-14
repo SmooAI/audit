@@ -1,0 +1,8 @@
+set -e
+
+pnpm lint:fix
+pnpm typecheck
+pnpm test
+pnpm build
+pnpm format
+git add .
