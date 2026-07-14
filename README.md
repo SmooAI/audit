@@ -19,9 +19,8 @@ Go, and .NET** — with identical semantics. All implementations are verified
 **byte-for-byte against a shared parity corpus**, so a hash computed in Go
 matches one computed in Rust or TypeScript for the same event.
 
-> **Status:** scaffold. The canonical serializer, hash chain, and emit transport
-> are stubbed (`TODO(audit-impl)`) and being implemented against the parity
-> corpus. The public API surface below is stable; the internals are landing.
+> **Status:** all five language implementations are complete and verified
+> byte-for-byte against the shared parity corpus (`spec/parity-corpus.json`).
 
 ## The shared surface
 
@@ -29,7 +28,7 @@ Every language exposes the same four things:
 
 | Concept                                              | What it does                                                                                                           |
 | ---------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| `AuditEvent`                                         | The canonical event schema (`id`, `orgId`, `timestamp`, `actor`, `action`, `resource?`, `metadata?`, `previousHash?`). |
+| `AuditEvent`                                         | The canonical event schema (`id`, `organizationId`, `timestamp`, `actorType`, `actorId`, `action`, `resource?`, `metadata?`, `hashPrevious?`, `hashCurrent?`). |
 | `canonicalJson(event)`                               | Deterministic, byte-identical JSON serialization.                                                                      |
 | `computeEventHash(event)` / `buildHashChain(events)` | The per-org-per-day SHA-256 hash chain.                                                                                |
 | `AuditClient` / `emit(event)`                        | POSTs an event to a configurable ingest endpoint with a bearer token.                                                  |
