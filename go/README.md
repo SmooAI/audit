@@ -5,8 +5,9 @@ SDK for tamper-evident, SQL-queryable audit logging: a canonical `Event` schema,
 canonical JSON serialization, a per-org-per-day SHA-256 hash chain, and an emit
 client. Verified byte-for-byte against a shared parity corpus.
 
-> **Status:** scaffold — `CanonicalJSON`, `ComputeEventHash`, and `Client.Emit`
-> are stubbed (return `ErrNotImplemented`, `TODO(audit-impl)`).
+Canonical serialization, the SHA-256 hash chain, and the emit client are
+verified byte-for-byte against the shared parity corpus
+(`../spec/parity-corpus.json`) — all 5 language SDKs produce identical bytes.
 
 ## Install
 
@@ -19,8 +20,8 @@ go get github.com/SmooAI/audit/go
 ```go
 import audit "github.com/SmooAI/audit/go"
 
-client := audit.NewClient(audit.ClientOptions{Endpoint: endpoint, Token: token})
-err := client.Emit(event)
+client := audit.NewClient(endpoint, token) // or &audit.AuditClient{Endpoint: endpoint, Token: token}
+err := client.Emit(ctx, event)             // seals (hashes) the event, POSTs canonical JSON w/ Bearer
 ```
 
 ## License

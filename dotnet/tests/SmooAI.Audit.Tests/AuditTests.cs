@@ -1,34 +1,81 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using SmooAI.Audit;
 
 namespace SmooAI.Audit.Tests;
 
+/// <summary>
+/// The parity gate: every fixture in the shared corpus must produce the byte-exact
+/// <c>expectedCanonical</c> and <c>expectedHash</c>. If any of the five language SDKs disagrees
+/// here, the hash chain is broken across stores. Never "fix" a divergence by editing the corpus —
+/// investigate the serializer.
+/// </summary>
 public class AuditTests
 {
-    private static AuditEvent SampleEvent() => new()
-    {
-        Id = "11111111-1111-1111-1111-111111111111",
-        OrgId = "org_123",
-        Timestamp = "2026-07-14T00:00:00.000Z",
-        Actor = "user_abc",
-        Action = "record.delete",
-        Resource = "contact:xyz",
-        PreviousHash = "",
-    };
+    private static readonly JsonSerializerOptions Relaxed = new(JsonSerializerDefaults.Web);
 
-    [Fact]
-    public void EventRoundtripsThroughJson()
+    public static IEnumerable<object[]> Fixtures()
     {
-        var evt = SampleEvent();
-        var json = JsonSerializer.Serialize(evt);
-        var parsed = JsonSerializer.Deserialize<AuditEvent>(json);
-        Assert.NotNull(parsed);
-        Assert.Equal(evt.Action, parsed!.Action);
+        using var doc = JsonDocument.Parse(File.ReadAllText(CorpusPath()));
+        foreach (var fixture in doc.RootElement.GetProperty("fixtures").EnumerateArray())
+        {
+            yield return new object[]
+            {
+                fixture.GetProperty("name").GetString()!,
+                fixture.GetProperty("event").GetRawText(),
+                fixture.GetProperty("expectedCanonical").GetString()!,
+                fixture.GetProperty("expectedHash").GetString()!,
+            };
+        }
+    }
+
+    [Theory]
+    [MemberData(nameof(Fixtures))]
+    public void FixtureMatchesCanonicalAndHash(string name, string eventJson, string expectedCanonical, string expectedHash)
+    {
+        _ = name; // surfaces as the test-case display name
+        var evt = JsonSerializer.Deserialize<AuditEvent>(eventJson, Relaxed)!;
+
+        Assert.Equal(expectedCanonical, Canonical.ToCanonicalJson(evt));
+        Assert.Equal(expectedHash, HashChain.ComputeEventHash(evt));
     }
 
     [Fact]
-    public void ToCanonicalJsonIsStubbed()
+    public void BuildChainsHashPreviousAcrossEvents()
     {
-        Assert.Throws<NotImplementedException>(() => Canonical.ToCanonicalJson(SampleEvent()));
+        var e1 = new AuditEvent
+        {
+            Id = "01A",
+            OrganizationId = "org-1",
+            ActorType = "user",
+            ActorId = "user-1",
+            Action = "crm.contact_created",
+            Resource = new AuditResource { Type = "crm.contact", Id = "c-1" },
+            Outcome = "success",
+            Metadata = new JsonObject(),
+            Timestamp = "2026-05-17T12:00:00.000Z",
+        };
+        var e2 = e1 with { Id = "01B", Timestamp = "2026-05-17T12:00:01.000Z" };
+
+        var chain = HashChain.Build(new[] { e1, e2 });
+
+        Assert.Null(chain[0].HashPrevious);
+        Assert.Equal(chain[0].HashCurrent, chain[1].HashPrevious);
+        Assert.NotNull(chain[1].HashCurrent);
+    }
+
+    private static string CorpusPath()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null)
+        {
+            var candidate = Path.Combine(dir.FullName, "spec", "parity-corpus.json");
+            if (File.Exists(candidate))
+            {
+                return candidate;
+            }
+            dir = dir.Parent;
+        }
+        throw new FileNotFoundException("spec/parity-corpus.json not found walking up from " + AppContext.BaseDirectory);
     }
 }

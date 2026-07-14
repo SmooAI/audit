@@ -1,3 +1,6 @@
+using System.Net.Http.Headers;
+using System.Text;
+
 namespace SmooAI.Audit;
 
 /// <summary>Configuration for <see cref="AuditClient"/>.</summary>
@@ -13,28 +16,45 @@ public sealed record AuditClientOptions
 /// <summary>
 /// Emits audit events to a configurable ingest endpoint over HTTPS.
 /// </summary>
-/// <remarks>
-/// TODO(audit-impl): implement <see cref="EmitAsync"/> — POST canonical JSON of the
-/// event to the endpoint with "Authorization: Bearer &lt;token&gt;", retry/backoff, and
-/// surface transport errors.
-/// </remarks>
 public sealed class AuditClient
 {
+    // ponytail: one shared HttpClient (the documented reuse pattern); inject one via the
+    // constructor overload for tests or custom handlers/timeouts.
+    private static readonly HttpClient SharedHttp = new();
+
     private readonly AuditClientOptions _options;
+    private readonly HttpClient _http;
 
     /// <summary>Create a client bound to the given endpoint + token.</summary>
     public AuditClient(AuditClientOptions options)
+        : this(options, SharedHttp)
     {
-        _options = options;
     }
 
-    /// <summary>Emit a single audit event.</summary>
-    /// <remarks>TODO(audit-impl): implement the HTTP POST.</remarks>
-    public Task EmitAsync(AuditEvent @event, CancellationToken cancellationToken = default)
+    /// <summary>Create a client with a caller-supplied <see cref="HttpClient"/>.</summary>
+    public AuditClient(AuditClientOptions options, HttpClient http)
     {
-        _ = _options;
-        _ = @event;
-        _ = cancellationToken;
-        throw new NotImplementedException("TODO(audit-impl): AuditClient.EmitAsync not implemented");
+        _options = options;
+        _http = http;
+    }
+
+    /// <summary>
+    /// Seal the event (compute + stamp <see cref="AuditEvent.HashCurrent"/>) and POST its canonical
+    /// JSON to the endpoint with an <c>Authorization: Bearer</c> header. Throws on a non-success
+    /// status. ponytail: single POST, no retry/backoff — add it when a real transport SLA demands it.
+    /// </summary>
+    public async Task EmitAsync(AuditEvent @event, CancellationToken cancellationToken = default)
+    {
+        var sealedEvent = @event with { HashCurrent = HashChain.ComputeEventHash(@event) };
+        var body = Canonical.ToCanonicalJson(sealedEvent);
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, _options.Endpoint)
+        {
+            Content = new StringContent(body, Encoding.UTF8, "application/json"),
+        };
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _options.Token);
+
+        using var response = await _http.SendAsync(request, cancellationToken).ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
     }
 }

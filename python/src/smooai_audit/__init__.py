@@ -3,13 +3,27 @@
 from .canonical import canonical_json
 from .client import AuditClient, AuditClientOptions
 from .hash import build_hash_chain, compute_event_hash
-from .schema import AuditEvent
+from .schema import (
+    AUDIT_ACTIONS,
+    AuditActorType,
+    AuditDiff,
+    AuditEvent,
+    AuditOutcome,
+    AuditResource,
+    is_namespaced_action,
+)
 
 __all__ = [
+    "AUDIT_ACTIONS",
+    "AuditActorType",
     "AuditClient",
     "AuditClientOptions",
+    "AuditDiff",
     "AuditEvent",
+    "AuditOutcome",
+    "AuditResource",
     "build_hash_chain",
     "canonical_json",
     "compute_event_hash",
+    "is_namespaced_action",
 ]

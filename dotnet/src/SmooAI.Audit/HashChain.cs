@@ -1,3 +1,6 @@
+using System.Security.Cryptography;
+using System.Text;
+
 namespace SmooAI.Audit;
 
 /// <summary>SHA-256 hash chain over audit events.</summary>
@@ -5,27 +8,33 @@ public static class HashChain
 {
     /// <summary>
     /// Return the lowercase hex SHA-256 of an event, taken over
-    /// <see cref="Canonical.ToCanonicalJson"/> with <see cref="AuditEvent.PreviousHash"/>
-    /// folded in, forming a per-org-per-day tamper-evident chain.
+    /// <see cref="Canonical.ToCanonicalJson"/> of the event with its own
+    /// <see cref="AuditEvent.HashCurrent"/> excluded — mirrors <c>computeEventHash</c> in
+    /// <c>packages/audit/src/hash-chain.ts</c>.
     /// </summary>
-    /// <remarks>
-    /// TODO(audit-impl): implement — sha256(previousHash || canonicalJson(event)).
-    /// </remarks>
     public static string ComputeEventHash(AuditEvent @event)
     {
-        _ = @event;
-        throw new NotImplementedException("TODO(audit-impl): ComputeEventHash not implemented");
+        var canonical = Canonical.ToCanonicalJson(@event with { HashCurrent = null });
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(canonical));
+        return Convert.ToHexString(hash).ToLowerInvariant();
     }
 
     /// <summary>
-    /// Fold events into a hash chain, stamping each with its
-    /// <see cref="AuditEvent.PreviousHash"/>. <paramref name="genesisHash"/> seeds the chain.
+    /// Fold events into a hash chain, stamping each with its <see cref="AuditEvent.HashPrevious"/>
+    /// and <see cref="AuditEvent.HashCurrent"/>. <paramref name="genesisHash"/> seeds the chain
+    /// (empty = first event has no previous hash, matching the TS <c>sealEvent(undefined)</c> case).
     /// </summary>
-    /// <remarks>TODO(audit-impl): implement the chain fold over ComputeEventHash.</remarks>
     public static IReadOnlyList<AuditEvent> Build(IReadOnlyList<AuditEvent> events, string genesisHash = "")
     {
-        _ = events;
-        _ = genesisHash;
-        throw new NotImplementedException("TODO(audit-impl): HashChain.Build not implemented");
+        var result = new List<AuditEvent>(events.Count);
+        var previous = genesisHash;
+        foreach (var @event in events)
+        {
+            var withPrev = @event with { HashPrevious = string.IsNullOrEmpty(previous) ? null : previous };
+            var current = ComputeEventHash(withPrev);
+            result.Add(withPrev with { HashCurrent = current });
+            previous = current;
+        }
+        return result;
     }
 }

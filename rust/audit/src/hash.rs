@@ -1,21 +1,91 @@
-//! SHA-256 hash chain over audit events.
+//! Per-event SHA-256 + the per-org-per-day hash chain.
+//!
+//! `hashCurrent = SHA-256(canonical-JSON(event minus hashCurrent))`, linked via
+//! `hashPrevious`. Byte-verified against `spec/parity-corpus.json`.
 
-use crate::error::AuditError;
+use sha2::{Digest, Sha256};
+
+use crate::canonical::canonical_json;
 use crate::schema::AuditEvent;
 
-/// Return the lowercase hex SHA-256 of an event.
+/// Lowercase-hex SHA-256 of the canonical JSON of `value`.
 ///
-/// Taken over `canonical_json(event)` with `previous_hash` folded in, forming a
-/// per-org-per-day tamper-evident chain.
-///
-/// TODO(audit-impl): implement — sha256(previous_hash || canonical_json(event)).
-pub fn compute_event_hash(_event: &AuditEvent) -> Result<String, AuditError> {
-    Err(AuditError::NotImplemented("compute_event_hash"))
+/// `value` MUST be the event object **without** `hashCurrent` (and with
+/// `hashPrevious` already set to the chain head, or omitted on the first event
+/// of a day). See [`AuditEvent::event_for_hash`].
+pub fn compute_event_hash(value: &serde_json::Value) -> String {
+    let digest = Sha256::digest(canonical_json(value).as_bytes());
+    // Lowercase hex without pulling in the `hex` crate.
+    let mut out = String::with_capacity(digest.len() * 2);
+    for byte in digest {
+        out.push_str(&format!("{byte:02x}"));
+    }
+    out
 }
 
-/// Fold events into a hash chain, stamping each with its `previous_hash`.
+/// Fold events into a per-org-per-day hash chain, stamping each with its
+/// `hashPrevious` (the prior event's hash) and `hashCurrent`.
 ///
-/// TODO(audit-impl): implement the chain fold over `compute_event_hash`.
-pub fn build_hash_chain(_events: &[AuditEvent], _genesis_hash: &str) -> Result<Vec<AuditEvent>, AuditError> {
-    Err(AuditError::NotImplemented("build_hash_chain"))
+/// `chain_head` is the hash of the last event already in today's chain, or
+/// `None` for the first event of the day (which gets no `hashPrevious`). Returns
+/// the events with both hash fields set, in order.
+pub fn build_hash_chain(events: Vec<AuditEvent>, chain_head: Option<String>) -> Vec<AuditEvent> {
+    let mut head = chain_head;
+    events
+        .into_iter()
+        .map(|mut event| {
+            event.hash_previous = head.clone();
+            let hash = event.compute_hash();
+            event.hash_current = Some(hash.clone());
+            head = Some(hash);
+            event
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn hash_is_64_hex_lowercase() {
+        let h = compute_event_hash(&json!({ "a": 1 }));
+        assert_eq!(h.len(), 64);
+        assert!(h.chars().all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()));
+    }
+
+    #[test]
+    fn chain_links_previous_to_prior_current() {
+        let base = AuditEvent {
+            id: "id".into(),
+            organization_id: "org".into(),
+            actor_type: crate::schema::ActorType::System,
+            actor_id: "sys".into(),
+            actor_email: None,
+            action: "x.y".into(),
+            resource: crate::schema::AuditResource {
+                type_: "t".into(),
+                id: "i".into(),
+            },
+            outcome: crate::schema::Outcome::Success,
+            reason: None,
+            session_id: None,
+            conversation_id: None,
+            ip_address: None,
+            user_agent: None,
+            geo_country: None,
+            diff: None,
+            metadata: Default::default(),
+            timestamp: "2026-01-01T00:00:00.000Z".into(),
+            hash_previous: None,
+            hash_current: None,
+        };
+        let mut second = base.clone();
+        second.id = "id2".into();
+        let chain = build_hash_chain(vec![base, second], None);
+        assert_eq!(chain[0].hash_previous, None, "first event has no hashPrevious");
+        assert_eq!(chain[1].hash_previous, chain[0].hash_current, "link to prior current");
+        assert!(chain[0].hash_current.is_some());
+    }
 }

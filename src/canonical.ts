@@ -1,15 +1,31 @@
-import type { AuditEvent } from "./schema";
-
 /**
- * Serialize an audit event to its canonical JSON string.
+ * Canonical JSON serialization for the audit hash chain.
  *
  * Canonical form must be byte-for-byte identical across every language SDK so
- * the hash chain is portable: deterministic key ordering, no insignificant
- * whitespace, stable number/unicode formatting.
+ * the hash chain is portable. The rules (asserted by `spec/parity-corpus.json`):
  *
- * TODO(audit-impl): implement the canonical serializer against the shared parity
- * corpus (sorted keys recursively, UTF-8, no NaN/Infinity, minimal escaping).
+ *   - Objects: keys whose value is `undefined` are dropped; remaining keys are
+ *     sorted ascending by JS string (UTF-16 code-unit) order; each renders as
+ *     `JSON.stringify(key) + ":" + canonicalJson(value)`, joined by ",".
+ *   - Arrays: element order is PRESERVED (never sorted); each element is
+ *     serialized recursively.
+ *   - Everything else (null, string, number, boolean): `JSON.stringify(value)`,
+ *     which fixes escaping, unicode, and integer/number formatting.
+ *
+ * IMPORTANT: keep this in lockstep with every other SDK. Hashes diverge if any
+ * party serializes differently.
  */
-export function canonicalJson(_event: AuditEvent): string {
-  throw new Error("TODO(audit-impl): canonicalJson not implemented");
+export function canonicalJson(value: unknown): string {
+  if (value === null || typeof value !== "object") {
+    return JSON.stringify(value);
+  }
+  if (Array.isArray(value)) {
+    return `[${value.map(canonicalJson).join(",")}]`;
+  }
+  const obj = value as Record<string, unknown>;
+  const keys = Object.keys(obj)
+    .filter((k) => obj[k] !== undefined)
+    .sort();
+  const parts = keys.map((k) => `${JSON.stringify(k)}:${canonicalJson(obj[k])}`);
+  return `{${parts.join(",")}}`;
 }

@@ -1,10 +1,11 @@
 //! SmooAI Audit for Rust.
 //!
 //! A polyglot client SDK for tamper-evident, SQL-queryable audit logging. This
-//! crate mirrors the feature set of the TypeScript, Python, Go, and .NET SDKs
-//! provided by `@smooai/audit`: a canonical [`AuditEvent`] schema, canonical JSON
-//! serialization, a per-org-per-day SHA-256 hash chain, and an emit client.
-//! All implementations are verified byte-for-byte against a shared parity corpus.
+//! crate mirrors the TypeScript, Python, Go, and .NET SDKs of `@smooai/audit`: a
+//! canonical [`AuditEvent`] schema, canonical JSON serialization, a
+//! per-org-per-day SHA-256 hash chain, and an emit [`AuditClient`]. Every
+//! implementation is verified byte-for-byte against the shared parity corpus
+//! (`spec/parity-corpus.json`).
 
 pub mod canonical;
 pub mod client;
@@ -16,22 +17,37 @@ pub use crate::canonical::canonical_json;
 pub use crate::client::{AuditClient, AuditClientOptions};
 pub use crate::error::AuditError;
 pub use crate::hash::{build_hash_chain, compute_event_hash};
-pub use crate::schema::AuditEvent;
+pub use crate::schema::{actions, is_namespaced_action, ActorType, AuditDiff, AuditEvent, AuditResource, Outcome, AUDIT_ACTIONS};
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::Map;
 
     fn sample_event() -> AuditEvent {
         AuditEvent {
-            id: "11111111-1111-1111-1111-111111111111".to_string(),
-            org_id: "org_123".to_string(),
-            timestamp: "2026-07-14T00:00:00.000Z".to_string(),
-            actor: "user_abc".to_string(),
-            action: "record.delete".to_string(),
-            resource: Some("contact:xyz".to_string()),
-            metadata: None,
-            previous_hash: Some(String::new()),
+            id: "01HXXXXXXXXXXXXXXXXXXXXXXX".into(),
+            organization_id: "org-1".into(),
+            actor_type: ActorType::User,
+            actor_id: "user-1".into(),
+            actor_email: None,
+            action: schema::actions::CRM_CONTACT_CREATED.into(),
+            resource: AuditResource {
+                type_: "crm.contact".into(),
+                id: "c-1".into(),
+            },
+            outcome: Outcome::Success,
+            reason: None,
+            session_id: None,
+            conversation_id: None,
+            ip_address: None,
+            user_agent: None,
+            geo_country: None,
+            diff: None,
+            metadata: Map::new(),
+            timestamp: "2026-05-17T12:00:00.000Z".into(),
+            hash_previous: None,
+            hash_current: None,
         }
     }
 
@@ -44,7 +60,11 @@ mod tests {
     }
 
     #[test]
-    fn canonical_json_is_stubbed() {
-        assert!(matches!(canonical_json(&sample_event()), Err(AuditError::NotImplemented("canonical_json"))));
+    fn sealed_sets_hash_current_and_excludes_it_from_the_hash() {
+        let event = sample_event();
+        let sealed = event.sealed();
+        assert_eq!(sealed.hash_current.as_deref(), Some(event.compute_hash().as_str()));
+        // Sealing must not change the hashed bytes (hashCurrent is excluded).
+        assert_eq!(sealed.compute_hash(), event.compute_hash());
     }
 }
