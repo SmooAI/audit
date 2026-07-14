@@ -8,12 +8,14 @@
 //! (`spec/parity-corpus.json`).
 
 pub mod canonical;
+#[cfg(feature = "client")]
 pub mod client;
 pub mod error;
 pub mod hash;
 pub mod schema;
 
 pub use crate::canonical::canonical_json;
+#[cfg(feature = "client")]
 pub use crate::client::{AuditClient, AuditClientOptions};
 pub use crate::error::AuditError;
 pub use crate::hash::{build_hash_chain, compute_event_hash};

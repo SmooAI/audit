@@ -12,6 +12,7 @@ pub enum AuditError {
         status: u16,
     },
     /// The HTTP request itself failed (connect, TLS, timeout, …).
+    #[cfg(feature = "client")]
     #[error("audit ingest transport error: {0}")]
     Transport(#[from] reqwest::Error),
     /// The event could not be serialized to JSON.

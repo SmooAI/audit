@@ -10,6 +10,14 @@ keywords = ["audit", "tamper-evident", "hash-chain", "smooai", "observability"]
 categories = ["development-tools::debugging"]
 readme = "README.md"
 
+[features]
+# The HTTP emit client (AuditClient) is on by default for standalone SDK use.
+# Consumers that only need the schema + canonical + hash chain (e.g. a service
+# that publishes events onto its own transport like NATS) can depend with
+# `default-features = false` to drop the reqwest + async-runtime pull entirely.
+default = ["client"]
+client = ["dep:reqwest"]
+
 [dependencies]
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
@@ -17,5 +25,6 @@ sha2 = "0.10"
 thiserror = "1"
 # HTTP emit client. rustls-only (no OpenSSL) to match the workspace's
 # native-TLS-free posture; no json feature — we POST the exact canonical bytes,
-# not a re-serialization. reqwest brings its own async runtime.
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+# not a re-serialization. reqwest brings its own async runtime. Optional so
+# schema-only consumers avoid it (see the `client` feature above).
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"], optional = true }
