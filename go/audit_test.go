@@ -12,6 +12,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"go.opentelemetry.io/otel/trace"
 )
 
 // corpus mirrors ../spec/parity-corpus.json — the single committed cross-language
@@ -175,14 +177,142 @@ func TestEmitPostsCanonicalBytes(t *testing.T) {
 	if gotAuth != "Bearer tok-123" {
 		t.Fatalf("Authorization = %q, want Bearer tok-123", gotAuth)
 	}
-	// Body must be the sealed event's canonical JSON (includes hashCurrent) and
-	// its hashCurrent must equal ComputeEventHash of the pre-seal event.
+	// Body must be the envelope whose "event" is the sealed event's canonical
+	// JSON (includes hashCurrent), and that hashCurrent must equal
+	// ComputeEventHash of the pre-seal event.
 	hash, _ := ComputeEventHash(ev)
 	var decoded map[string]any
 	if err := json.Unmarshal([]byte(gotBody), &decoded); err != nil {
 		t.Fatalf("emitted body not JSON: %v", err)
 	}
-	if decoded["hashCurrent"] != hash {
-		t.Fatalf("emitted hashCurrent = %v, want %s", decoded["hashCurrent"], hash)
+	sealed, ok := decoded["event"].(map[string]any)
+	if !ok {
+		t.Fatalf("envelope has no event object: %v", decoded)
+	}
+	if sealed["hashCurrent"] != hash {
+		t.Fatalf("emitted hashCurrent = %v, want %s", sealed["hashCurrent"], hash)
+	}
+}
+
+// tracedContext returns a context carrying a valid, non-recording W3C span
+// context — the otel API alone, no SDK, so the test has no exporter to wire up.
+func tracedContext(traceID, spanID string) context.Context {
+	tid, err := trace.TraceIDFromHex(traceID)
+	if err != nil {
+		panic(err)
+	}
+	sid, err := trace.SpanIDFromHex(spanID)
+	if err != nil {
+		panic(err)
+	}
+	sc := trace.NewSpanContext(trace.SpanContextConfig{TraceID: tid, SpanID: sid, TraceFlags: trace.FlagsSampled})
+	return trace.ContextWithSpanContext(context.Background(), sc)
+}
+
+// captureEmit runs Emit against a throwaway server and returns the decoded body.
+func captureEmit(t *testing.T, ctx context.Context, ev AuditEvent) map[string]any {
+	t.Helper()
+	var body string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		body = string(b)
+		w.WriteHeader(http.StatusAccepted)
+	}))
+	defer srv.Close()
+	if err := NewClient(srv.URL, "tok").Emit(ctx, ev); err != nil {
+		t.Fatalf("Emit: %v", err)
+	}
+	var decoded map[string]any
+	if err := json.Unmarshal([]byte(body), &decoded); err != nil {
+		t.Fatalf("emitted body not JSON: %v", err)
+	}
+	return decoded
+}
+
+func sampleEvent() AuditEvent {
+	return AuditEvent{
+		ID: "1", OrganizationID: "org-1", ActorType: ActorSystem, ActorID: "sys",
+		Action: "user.signin", Resource: AuditResource{Type: "user", ID: "u1"},
+		Outcome: OutcomeSuccess, Metadata: map[string]any{}, Timestamp: "2026-07-14T00:00:00.000Z",
+	}
+}
+
+// TestEmitEnvelopeCarriesTraceContext: with an active span the envelope carries
+// the W3C ids.
+func TestEmitEnvelopeCarriesTraceContext(t *testing.T) {
+	ctx := tracedContext("4bf92f3577b34da6a3ce929d0e0e4736", "00f067aa0ba902b7")
+	decoded := captureEmit(t, ctx, sampleEvent())
+	if decoded["traceId"] != "4bf92f3577b34da6a3ce929d0e0e4736" {
+		t.Fatalf("traceId = %v, want 4bf92f3577b34da6a3ce929d0e0e4736", decoded["traceId"])
+	}
+	if decoded["spanId"] != "00f067aa0ba902b7" {
+		t.Fatalf("spanId = %v, want 00f067aa0ba902b7", decoded["spanId"])
+	}
+}
+
+// TestEmitOmitsTraceContextWithoutSpan: no span → the keys are ABSENT, not
+// zeroed and not empty.
+func TestEmitOmitsTraceContextWithoutSpan(t *testing.T) {
+	decoded := captureEmit(t, context.Background(), sampleEvent())
+	if _, ok := decoded["traceId"]; ok {
+		t.Fatalf("traceId must be omitted without a span, got %v", decoded["traceId"])
+	}
+	if _, ok := decoded["spanId"]; ok {
+		t.Fatalf("spanId must be omitted without a span, got %v", decoded["spanId"])
+	}
+}
+
+// TestEmitHashUnchangedByTraceContext is the hash-chain regression gate: every
+// typed corpus fixture must seal to its committed expectedHash whether or not a
+// span is active, and the envelope minus the trace ids must be the byte-exact
+// canonical preimage-plus-hash the verifier replays.
+func TestEmitHashUnchangedByTraceContext(t *testing.T) {
+	typedFixtures := map[string]bool{
+		"minimal_first_of_day":           true,
+		"chained_with_hash_previous":     true,
+		"denied_outcome_with_reason":     true,
+		"vertical_app_ops_with_integers": true,
+	}
+	traced := tracedContext("4bf92f3577b34da6a3ce929d0e0e4736", "00f067aa0ba902b7")
+	for _, f := range loadCorpus(t).Fixtures {
+		if !typedFixtures[f.Name] {
+			continue
+		}
+		t.Run(f.Name, func(t *testing.T) {
+			var ev AuditEvent
+			if err := json.Unmarshal(f.Event, &ev); err != nil {
+				t.Fatalf("unmarshal into AuditEvent: %v", err)
+			}
+			for _, tc := range []struct {
+				name string
+				ctx  context.Context
+			}{{"no_span", context.Background()}, {"active_span", traced}} {
+				t.Run(tc.name, func(t *testing.T) {
+					decoded := captureEmit(t, tc.ctx, ev)
+					sealed, ok := decoded["event"].(map[string]any)
+					if !ok {
+						t.Fatalf("envelope has no event object: %v", decoded)
+					}
+					if sealed["hashCurrent"] != f.ExpectedHash {
+						t.Fatalf("hashCurrent = %v, want %s", sealed["hashCurrent"], f.ExpectedHash)
+					}
+					// The event minus its own hash must be the committed
+					// canonical bytes — trace ids live outside it.
+					delete(sealed, "hashCurrent")
+					reencoded, err := json.Marshal(sealed)
+					if err != nil {
+						t.Fatalf("marshal: %v", err)
+					}
+					preimage := decodeEvent(t, reencoded)
+					got, err := CanonicalJSON(preimage)
+					if err != nil {
+						t.Fatalf("CanonicalJSON: %v", err)
+					}
+					if got != f.ExpectedCanonical {
+						t.Fatalf("canonical mismatch\n got: %s\nwant: %s", got, f.ExpectedCanonical)
+					}
+				})
+			}
+		})
 	}
 }

@@ -17,6 +17,11 @@ readme = "README.md"
 # `default-features = false` to drop the reqwest + async-runtime pull entirely.
 default = ["client"]
 client = ["dep:reqwest"]
+# W3C trace correlation on the emit ENVELOPE (never inside the hashed event).
+# Off by default: an OSS audit SDK must not force OpenTelemetry on anyone. With
+# the feature off, `TraceContext::current()` is an empty-struct no-op and nothing
+# here links OTel at all.
+otel = ["dep:opentelemetry", "dep:tracing", "dep:tracing-opentelemetry"]
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }
@@ -28,3 +33,17 @@ thiserror = "1"
 # not a re-serialization. reqwest brings its own async runtime. Optional so
 # schema-only consumers avoid it (see the `client` feature above).
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"], optional = true }
+# Trace correlation, OPTIONAL by design (see the `otel` feature above).
+opentelemetry = { version = "0.32", optional = true, default-features = false, features = ["trace"] }
+# Needed to read a `tracing` span's OTel context. Every SmooAI Rust service
+# carries its span through a tracing-opentelemetry layer, and
+# `opentelemetry::Context::current()` does NOT necessarily see those — reading
+# only the OTel-native context would make the feature a no-op in production.
+tracing = { version = "0.1", optional = true }
+tracing-opentelemetry = { version = "0.33", optional = true, default-features = false }
+
+[dev-dependencies]
+# The correlation tests drive a real tracer so the assertion is on the ids that
+# actually reach the envelope, not on our own builder.
+opentelemetry_sdk = { version = "0.32", features = ["trace"] }
+tracing-subscriber = { version = "0.3", features = ["registry"] }

@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Net.Http.Headers;
 using System.Text;
 
@@ -39,14 +40,19 @@ public sealed class AuditClient
     }
 
     /// <summary>
-    /// Seal the event (compute + stamp <see cref="AuditEvent.HashCurrent"/>) and POST its canonical
-    /// JSON to the endpoint with an <c>Authorization: Bearer</c> header. Throws on a non-success
-    /// status. ponytail: single POST, no retry/backoff — add it when a real transport SLA demands it.
+    /// Seal the event (compute + stamp <see cref="AuditEvent.HashCurrent"/>) and POST the canonical
+    /// JSON envelope — the sealed event plus the current <see cref="Activity"/>'s W3C trace ids, when
+    /// one is active — to the endpoint with an <c>Authorization: Bearer</c> header. Throws on a
+    /// non-success status. ponytail: single POST, no retry/backoff — add it when a real transport SLA
+    /// demands it.
     /// </summary>
     public async Task EmitAsync(AuditEvent @event, CancellationToken cancellationToken = default)
     {
+        // Hash FIRST, from the event alone: the trace ids below ride in the envelope and can never
+        // enter the preimage.
         var sealedEvent = @event with { HashCurrent = HashChain.ComputeEventHash(@event) };
-        var body = Canonical.ToCanonicalJson(sealedEvent);
+        var (traceId, spanId) = CurrentTraceContext();
+        var body = Canonical.ToCanonicalJsonEnvelope(sealedEvent, traceId, spanId);
 
         using var request = new HttpRequestMessage(HttpMethod.Post, _options.Endpoint)
         {
@@ -56,5 +62,20 @@ public sealed class AuditClient
 
         using var response = await _http.SendAsync(request, cancellationToken).ConfigureAwait(false);
         response.EnsureSuccessStatusCode();
+    }
+
+    /// <summary>
+    /// W3C trace ids of the ambient <see cref="Activity"/>, or <c>(null, null)</c> when there is no
+    /// activity or it is not W3C-formatted. No package needed — <c>System.Diagnostics.Activity</c> is
+    /// in the BCL and is what the OpenTelemetry .NET SDK itself populates.
+    /// </summary>
+    private static (string? TraceId, string? SpanId) CurrentTraceContext()
+    {
+        var activity = Activity.Current;
+        if (activity is null || activity.IdFormat != ActivityIdFormat.W3C || activity.TraceId == default)
+        {
+            return (null, null);
+        }
+        return (activity.TraceId.ToHexString(), activity.SpanId.ToHexString());
     }
 }

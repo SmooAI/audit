@@ -18,3 +18,10 @@ export {
 export { canonicalJson } from "./canonical";
 export { computeEventHash, buildHashChain, verifyChain } from "./hash";
 export { AuditClient, type AuditClientOptions, type SealedAuditEvent } from "./client";
+export {
+  buildEnvelope,
+  currentTraceContext,
+  envelopeJson,
+  type AuditEnvelope,
+  type TraceContext,
+} from "./envelope";
