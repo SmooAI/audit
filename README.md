@@ -33,6 +33,31 @@ Every language exposes the same four things:
 | `computeEventHash(event)` / `buildHashChain(events)` | The per-org-per-day SHA-256 hash chain.                                                                                |
 | `AuditClient` / `emit(event)`                        | POSTs an event to a configurable ingest endpoint with a bearer token.                                                  |
 
+## The wire envelope
+
+`emit` POSTs the canonical JSON of an **envelope**, not the bare event:
+
+```json
+{ "event": { "…the sealed event…": "…" }, "spanId": "00f067aa0ba902b7", "traceId": "4bf92f3577b34da6a3ce929d0e0e4736" }
+```
+
+`traceId` / `spanId` are the W3C trace context captured at emit time, so an audit
+row can be joined back to the request that caused it. They live in the envelope,
+one level ABOVE the event, and never inside it: the hash chain covers
+canonical-JSON(event minus `hashCurrent`), so a field added to the event would
+change every hash and invalidate every chain already in a store. The bytes under
+`"event"` are byte-identical with or without a trace active — every language
+asserts the parity corpus inside an active span as well as outside one.
+
+Both ids are omitted entirely when there is no valid span — never an empty string,
+never the all-zero `00000000000000000000000000000000` id an unregistered SDK hands
+you. OpenTelemetry is optional everywhere (TypeScript: an optional
+`@opentelemetry/api` peer dependency; Rust: the `otel` cargo feature, off by
+default; Python: the `otel` extra — `pip install smooai-audit[otel]` — behind a
+guarded import; Go: the otel trace API only, no SDK, reading the span context off
+the `ctx` you already pass to `Emit`; .NET: `Activity.Current` from the BCL, so no
+new package at all), and with it absent the client behaves exactly as it did before.
+
 ## Install
 
 **TypeScript / Node**

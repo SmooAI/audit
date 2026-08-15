@@ -10,6 +10,7 @@
 pub mod canonical;
 #[cfg(feature = "client")]
 pub mod client;
+pub mod envelope;
 pub mod error;
 pub mod hash;
 pub mod schema;
@@ -17,6 +18,7 @@ pub mod schema;
 pub use crate::canonical::canonical_json;
 #[cfg(feature = "client")]
 pub use crate::client::{AuditClient, AuditClientOptions};
+pub use crate::envelope::{envelope_json, TraceContext};
 pub use crate::error::AuditError;
 pub use crate::hash::{build_hash_chain, compute_event_hash};
 pub use crate::schema::{actions, is_namespaced_action, ActorType, AuditDiff, AuditEvent, AuditResource, Outcome, AUDIT_ACTIONS};

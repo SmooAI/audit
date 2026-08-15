@@ -111,3 +111,96 @@ def test_emit_swallows_transport_errors_by_default() -> None:
     )
     client.emit(event)  # must not raise
     assert len(captured) == 1
+
+
+# --- Envelope trace correlation -------------------------------------------------
+# traceId/spanId ride OUTSIDE the hashed event, so an active span must never move
+# a hash. otel is an optional extra: skip if it is not installed.
+
+_TRACE_ID = "4bf92f3577b34da6a3ce929d0e0e4736"
+_SPAN_ID = "00f067aa0ba902b7"
+
+
+class _FakeResponse:
+    status = 202
+    headers: dict[str, str] = {}  # noqa: RUF012 — test stub
+
+    def __enter__(self) -> _FakeResponse:
+        return self
+
+    def __exit__(self, *_: object) -> None:
+        return None
+
+
+def _emit_capture(monkeypatch: pytest.MonkeyPatch, event: AuditEvent) -> dict[str, Any]:
+    """Emit ``event`` through a stubbed transport and return the decoded body."""
+    captured: dict[str, Any] = {}
+
+    def fake_urlopen(request: Any, timeout: float = 0) -> _FakeResponse:  # noqa: ARG001
+        captured.update(json.loads(request.data.decode("utf-8")))
+        return _FakeResponse()
+
+    monkeypatch.setattr("smooai_audit.client.urllib.request.urlopen", fake_urlopen)
+    client = AuditClient(AuditClientOptions(endpoint="http://audit.test/ingest", token="t", swallow_errors=False))
+    client.emit(event)
+    return captured
+
+
+def _active_span() -> Any:
+    """A valid non-recording span from the otel API alone (no SDK/exporter)."""
+    trace = pytest.importorskip("opentelemetry.trace")
+    span_context = trace.SpanContext(
+        trace_id=int(_TRACE_ID, 16),
+        span_id=int(_SPAN_ID, 16),
+        is_remote=False,
+        trace_flags=trace.TraceFlags(trace.TraceFlags.SAMPLED),
+    )
+    return trace.use_span(trace.NonRecordingSpan(span_context), end_on_exit=False)
+
+
+def _sample_event() -> AuditEvent:
+    return AuditEvent(
+        id="e-1",
+        organization_id="org-1",
+        actor_type="user",
+        actor_id="u-1",
+        action="crm.contact_created",
+        resource={"type": "crm.contact", "id": "c-1"},
+        outcome="success",
+        metadata={},
+        timestamp="2026-05-17T12:00:00.000Z",
+    )
+
+
+def test_envelope_carries_trace_ids_when_span_active(monkeypatch: pytest.MonkeyPatch) -> None:
+    with _active_span():
+        body = _emit_capture(monkeypatch, _sample_event())
+    assert body["traceId"] == _TRACE_ID
+    assert body["spanId"] == _SPAN_ID
+
+
+def test_envelope_omits_trace_ids_without_span(monkeypatch: pytest.MonkeyPatch) -> None:
+    body = _emit_capture(monkeypatch, _sample_event())
+    assert "traceId" not in body  # omitted entirely — never all-zero, never ""
+    assert "spanId" not in body
+
+
+@pytest.mark.parametrize("fixture", _FIXTURES, ids=_FIXTURE_IDS)
+def test_corpus_hash_unchanged_under_active_span(monkeypatch: pytest.MonkeyPatch, fixture: dict[str, Any]) -> None:
+    """The hash-chain regression gate: every corpus fixture must seal to its
+    committed hash — and the envelope minus the trace ids must be the committed
+    canonical bytes — whether or not a span is active."""
+    event = AuditEvent.model_validate(fixture["event"])
+
+    without_span = _emit_capture(monkeypatch, event)
+    with _active_span():
+        with_span = _emit_capture(monkeypatch, event)
+
+    for body in (without_span, with_span):
+        sealed = body["event"]
+        assert sealed["hashCurrent"] == fixture["expectedHash"]
+        preimage = {k: v for k, v in sealed.items() if k != "hashCurrent"}
+        assert canonical_json(preimage) == fixture["expectedCanonical"]
+
+    assert with_span["traceId"] == _TRACE_ID
+    assert "traceId" not in without_span

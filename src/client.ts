@@ -1,4 +1,4 @@
-import { canonicalJson } from "./canonical";
+import { buildEnvelope, envelopeJson, type TraceContext } from "./envelope";
 import { computeEventHash } from "./hash";
 import type { AuditEvent } from "./schema";
 
@@ -23,8 +23,11 @@ const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout
 /**
  * Client that emits audit events to a configurable ingest endpoint over HTTPS
  * with a bearer token. It stamps each event's `hashCurrent` (the canonical-JSON
- * SHA-256) and POSTs the canonical JSON body — the wire bytes are exactly what
- * every language SDK produces, so the server can persist without re-serializing.
+ * SHA-256) and POSTs the canonical JSON of an {@link AuditEnvelope} —
+ * `{"event":<the sealed event>,"spanId":…,"traceId":…}`. The bytes under
+ * `"event"` are exactly what every language SDK produces for that event, so the
+ * server can persist them without re-serializing, and the trace ids ride
+ * OUTSIDE them so they cannot perturb a single hash.
  *
  * Retries transient failures (network errors and HTTP 5xx) with exponential
  * backoff; 4xx responses are surfaced immediately (they will not succeed on
@@ -46,14 +49,21 @@ export class AuditClient {
   }
 
   /**
-   * Seal `event` with its `hashCurrent` and POST the canonical JSON to the
-   * ingest endpoint. Resolves on 2xx; throws on non-transient (4xx) responses
-   * and after retries are exhausted on transient failures.
+   * Seal `event` with its `hashCurrent` and POST the canonical JSON of its
+   * envelope to the ingest endpoint. Resolves on 2xx; throws on non-transient
+   * (4xx) responses and after retries are exhausted on transient failures.
+   *
+   * The active W3C trace context is captured here, at emit time, and carried in
+   * the envelope so an event can be tied back to the request that caused it.
+   * `trace` overrides the ambient span; both are omitted when there is nothing
+   * valid to report.
    */
-  async emit(event: Omit<AuditEvent, "hashCurrent">): Promise<void> {
+  async emit(event: Omit<AuditEvent, "hashCurrent">, trace?: TraceContext): Promise<void> {
     const hashCurrent = computeEventHash(event);
     const sealed: SealedAuditEvent = { ...event, hashCurrent };
-    const body = canonicalJson(sealed);
+    // Built once, outside the retry loop: a retried POST must carry the SAME
+    // bytes, since the ingest endpoint dedupes on the event's hash.
+    const body = envelopeJson(await buildEnvelope(sealed, trace));
     const headers: Record<string, string> = {
       "content-type": "application/json",
       authorization: `Bearer ${this.token}`,

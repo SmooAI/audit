@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
 
 namespace SmooAI.Audit;
@@ -23,6 +24,34 @@ public static class Canonical
     {
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
     };
+
+    /// <summary>
+    /// Serialize the transport ENVELOPE to canonical JSON:
+    /// <c>{"event":{…the sealed event…},"spanId":"…","traceId":"…"}</c>.
+    /// The trace ids sit one level ABOVE the event, never inside it: they are added AFTER the hash is
+    /// computed, so the bytes under <c>"event"</c> — and therefore every hash — are identical whether
+    /// or not a span is active. A null/empty id is omitted entirely (never an all-zero id, never "").
+    /// </summary>
+    internal static string ToCanonicalJsonEnvelope(AuditEvent @event, string? traceId, string? spanId)
+    {
+        var envelope = new JsonObject
+        {
+            ["event"] = JsonNode.Parse(JsonSerializer.Serialize(@event, SerializeOptions)),
+        };
+        if (!string.IsNullOrEmpty(traceId))
+        {
+            envelope["traceId"] = traceId;
+        }
+        if (!string.IsNullOrEmpty(spanId))
+        {
+            envelope["spanId"] = spanId;
+        }
+
+        using var doc = JsonDocument.Parse(envelope.ToJsonString());
+        var sb = new StringBuilder();
+        Write(sb, doc.RootElement);
+        return sb.ToString();
+    }
 
     /// <summary>Serialize an audit event to its canonical JSON string.</summary>
     public static string ToCanonicalJson(AuditEvent @event)

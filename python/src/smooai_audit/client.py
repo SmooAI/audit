@@ -18,6 +18,26 @@ from .canonical import canonical_json
 from .hash import compute_event_hash
 from .schema import AuditEvent
 
+try:  # OpenTelemetry is an OPTIONAL extra (``pip install smooai-audit[otel]``).
+    from opentelemetry import trace as _otel_trace
+except ImportError:  # pragma: no cover — exercised by the no-otel install path
+    _otel_trace = None
+
+
+def _trace_envelope() -> dict[str, str]:
+    """Current W3C trace ids, or ``{}`` when otel is absent or no span is active.
+
+    These ride in the ENVELOPE only — one level ABOVE the event, never inside it
+    — so a trace context can never change an event's ``hashCurrent``. An invalid
+    (all-zero) span context yields no keys at all rather than zeroed or empty ids.
+    """
+    if _otel_trace is None:
+        return {}
+    context = _otel_trace.get_current_span().get_span_context()
+    if not context.is_valid:
+        return {}
+    return {"traceId": format(context.trace_id, "032x"), "spanId": format(context.span_id, "016x")}
+
 
 @dataclass
 class AuditClientOptions:
@@ -42,13 +62,19 @@ class AuditClient:
         self._options = options
 
     def emit(self, event: AuditEvent) -> None:
-        """Seal ``event`` (stamp ``hashCurrent`` if absent) and POST its canonical
-        JSON with ``Authorization: Bearer <token>``. Swallows errors unless
-        ``swallow_errors`` is False."""
+        """Seal ``event`` (stamp ``hashCurrent`` if absent) and POST the canonical
+        JSON envelope with ``Authorization: Bearer <token>``::
+
+            {"event": {…the sealed event…}, "spanId": "…", "traceId": "…"}
+
+        The bytes under ``event`` are what the hash covers; the active span's
+        ids ride outside them (omitted entirely when there is no span). Swallows
+        errors unless ``swallow_errors`` is False."""
         try:
             if not event.hash_current:
                 event = event.model_copy(update={"hash_current": compute_event_hash(event)})
-            body = canonical_json(event).encode("utf-8")
+            envelope = {"event": event.model_dump(by_alias=True, exclude_unset=True, mode="json")} | _trace_envelope()
+            body = canonical_json(envelope).encode("utf-8")
             request = urllib.request.Request(
                 self._options.endpoint,
                 data=body,

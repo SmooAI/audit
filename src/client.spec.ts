@@ -18,7 +18,7 @@ const event = {
 const okResponse = () => new Response(null, { status: 200 });
 
 describe("AuditClient.emit", () => {
-  it("POSTs canonical JSON of the sealed event with a Bearer token", async () => {
+  it("POSTs the canonical JSON envelope around the sealed event with a Bearer token", async () => {
     const fetchImpl = vi.fn().mockResolvedValue(okResponse());
     const client = new AuditClient({
       endpoint: "https://audit.example/events",
@@ -34,8 +34,10 @@ describe("AuditClient.emit", () => {
     expect(init.method).toBe("POST");
     expect((init.headers as Record<string, string>).authorization).toBe("Bearer tok-123");
 
+    // The event rides inside the envelope; trace ids (absent here — no span) ride
+    // beside it, never inside, so the hashed bytes are untouched.
     const sealed = { ...event, hashCurrent: computeEventHash(event) };
-    expect(init.body).toBe(canonicalJson(sealed));
+    expect(init.body).toBe(canonicalJson({ event: sealed }));
   });
 
   it("retries on HTTP 5xx then succeeds", async () => {
