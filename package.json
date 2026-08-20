@@ -50,7 +50,7 @@
   },
   "scripts": {
     "build": "pnpm tsdown && pnpm run python:build && pnpm run rust:build && pnpm run go:build",
-    "check-all": "pnpm run typecheck && pnpm run lint && pnpm run test && pnpm run rust:fmt:check && pnpm run rust:lint && pnpm run rust:test && pnpm run go:fmt:check && pnpm run go:lint && pnpm run go:test && pnpm run build",
+    "check-all": "pnpm run version:check && pnpm run typecheck && pnpm run lint && pnpm run test && pnpm run rust:fmt:check && pnpm run rust:lint && pnpm run rust:test && pnpm run go:fmt:check && pnpm run go:lint && pnpm run go:test && pnpm run build",
     "ci:publish": "node scripts/ci-publish.mjs",
     "format": "oxfmt --write . && pnpm run python:format && pnpm run rust:fmt && pnpm run go:fmt",
     "go:build": "(cd go && go build ./...)",
@@ -78,6 +78,8 @@
     "rust:test": "(cd rust/audit && cargo test --all-features)",
     "test": "vitest run && pnpm python:test && pnpm rust:test && pnpm go:test",
     "typecheck": "tsc --noEmit --skipLibCheck && pnpm run python:typecheck:errors && pnpm run rust:check && pnpm run go:build",
+    "version": "changeset version && node scripts/sync-versions.mjs",
+    "version:check": "node scripts/sync-versions.mjs --check",
     "version:sync": "node scripts/sync-versions.mjs",
     "watch": "tsdown --watch"
   },
