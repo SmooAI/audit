@@ -1,5 +1,5 @@
 ---
-'@smooai/audit': patch
+"@smooai/audit": patch
 ---
 
 Gate each registry's publish on that registry, not on a parsed stdout flag
