@@ -114,8 +114,19 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GH_PAT }}
           NPM_TOKEN: ${{ secrets.SMOOAI_NPM_TOKEN }}
 
+      # Which registries already carry package.json's version? Each publish below
+      # gates on ITS OWN registry rather than on `steps.changesets.outputs.published`
+      # — that output is derived by parsing changesets' stdout, so it silently goes
+      # false when npm was published in an EARLIER run (stranding the other four on a
+      # retry) or when @changesets/cli changes its output wording. See
+      # scripts/check-registries.mjs. --expect-npm when changesets just published, so
+      # npm's index has a moment to catch up.
+      - name: Which registries are missing this version?
+        id: registries
+        run: node scripts/check-registries.mjs --github ${{ steps.changesets.outputs.published == 'true' && '--expect-npm' || '' }}
+
       - name: Publish smooai-audit to PyPI
-        if: steps.changesets.outputs.published == 'true'
+        if: steps.registries.outputs.pypi_missing == 'true'
         working-directory: python
         env:
           UV_PUBLISH_TOKEN: ${{ secrets.SMOOAI_PYPI_TOKEN }}
@@ -125,7 +136,7 @@ jobs:
           uv run poe publish
 
       - name: Publish smooai-audit to crates.io
-        if: steps.changesets.outputs.published == 'true'
+        if: steps.registries.outputs.crates_missing == 'true'
         # --locked, never --allow-dirty: the manifests are synced in the changesets
         # `version` lifecycle and committed with the release, so the tree is clean
         # and Cargo.lock already carries the released version. A failure here means
@@ -135,7 +146,7 @@ jobs:
           CARGO_REGISTRY_TOKEN: ${{ secrets.SMOOAI_CARGO_REGISTRY_TOKEN }}
 
       - name: Tag and publish Go module
-        if: steps.changesets.outputs.published == 'true'
+        if: steps.registries.outputs.go_missing == 'true'
         run: |
           VERSION=$(node -p "require('./package.json').version")
           TAG="go/v${VERSION}"
@@ -152,7 +163,7 @@ jobs:
           echo "Go module tagged and pushed: ${TAG}"
 
       - name: Build and test .NET
-        if: steps.changesets.outputs.published == 'true'
+        if: steps.registries.outputs.nuget_missing == 'true'
         working-directory: dotnet
         run: |
           dotnet restore SmooAI.Audit.sln
@@ -160,7 +171,7 @@ jobs:
           dotnet test SmooAI.Audit.sln -c Release --no-build --nologo
 
       - name: Pack and publish SmooAI.Audit to NuGet
-        if: steps.changesets.outputs.published == 'true'
+        if: steps.registries.outputs.nuget_missing == 'true'
         run: |
           VERSION=$(node -p "require('./package.json').version")
           echo "Packing SmooAI.Audit ${VERSION}"
@@ -178,6 +189,14 @@ jobs:
           done
         env:
           NUGET_API_KEY: ${{ secrets.SMOOAI_NUGET_API_KEY }}
+
+      # Fail the run if npm shipped a version the others didn't. Without this a
+      # partial publish is invisible: the earlier steps skip quietly and the run
+      # ends green. NuGet is reported but NOT asserted — its index lags an accepted
+      # push by minutes to tens of minutes, so holding it strictly would redden a
+      # release that succeeded. See scripts/check-registries.mjs.
+      - name: Verify no registry was stranded
+        run: node scripts/check-registries.mjs --assert
 
       - name: Auto-Merge Changeset PR
         run: |
