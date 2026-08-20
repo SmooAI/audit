@@ -9,8 +9,10 @@ client SDK for tamper-evident, SQL-queryable audit logging: a canonical
 chain, and an emit client. Wire-compatible with the TypeScript, Python, Rust, and
 Go ports and verified byte-for-byte against a shared parity corpus.
 
-> **Status:** scaffold — `Canonical.ToCanonicalJson`, `HashChain.ComputeEventHash`,
-> and `AuditClient.EmitAsync` are stubbed (`TODO(audit-impl)`).
+> **Status:** complete — `Canonical.ToCanonicalJson`, `HashChain.ComputeEventHash`,
+> `HashChain.Build`, and `AuditClient.EmitAsync` are implemented and verified
+> byte-for-byte against the shared parity corpus (`spec/parity-corpus.json`),
+> including envelope trace correlation (`Activity.Current`, no extra package).
 
 ## Install
 
@@ -21,16 +23,21 @@ dotnet add package SmooAI.Audit
 ## Usage
 
 ```csharp
+using System.Text.Json.Nodes;
 using SmooAI.Audit;
 
 var client = new AuditClient(new AuditClientOptions { Endpoint = endpoint, Token = token });
 await client.EmitAsync(new AuditEvent
 {
-    Id = Guid.NewGuid().ToString(),
-    OrgId = "org_123",
+    Id = "01HXXXXXXXXXXXXXXXXXXXXXXX",
+    OrganizationId = "org_123",
+    ActorType = "user",
+    ActorId = "user_abc",
+    Action = "crm.contact_deleted",
+    Resource = new AuditResource { Type = "crm.contact", Id = "c-42" },
+    Outcome = "success",
+    Metadata = new JsonObject(),
     Timestamp = DateTimeOffset.UtcNow.ToString("O"),
-    Actor = "user_abc",
-    Action = "record.delete",
 });
 ```
 

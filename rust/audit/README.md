@@ -5,8 +5,10 @@ client SDK for tamper-evident, SQL-queryable audit logging: a canonical
 `AuditEvent` schema, canonical JSON serialization, a per-org-per-day SHA-256 hash
 chain, and an emit client. Verified byte-for-byte against a shared parity corpus.
 
-> **Status:** scaffold — `canonical_json`, `compute_event_hash`, and
-> `AuditClient::emit` are stubbed (`TODO(audit-impl)`).
+> **Status:** complete — `canonical_json`, `compute_event_hash`, `build_hash_chain`,
+> and `AuditClient::emit` are implemented and verified byte-for-byte against the
+> shared parity corpus (`../../spec/parity-corpus.json`), including envelope trace
+> correlation (the `otel` cargo feature, off by default).
 
 ## Install
 
@@ -23,7 +25,7 @@ let client = AuditClient::new(AuditClientOptions {
     endpoint: endpoint.to_string(),
     token: token.to_string(),
 });
-client.emit(&event)?;
+client.emit(&event).await?; // or emit_with_trace(&event, Some(trace))
 ```
 
 ## License
