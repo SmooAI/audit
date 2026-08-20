@@ -87,8 +87,13 @@ jobs:
       - name: Build
         run: pnpm build
 
-      - name: Format
-        run: pnpm format
+      - name: Format check
+        # CHECK, never write. This step used to run `pnpm format` in write mode and
+        # nothing committed the result, so the release job reached
+        # `cargo publish` with a dirty tree — which is the only reason
+        # `--allow-dirty` was ever needed. Formatting is a gate, not a release
+        # side effect.
+        run: pnpm format:check
 
       - name: Version Update 🦋
         id: changesets
