@@ -5,4 +5,4 @@
 package audit
 
 // Version is the current version of the smooai-audit Go package.
-const Version = "0.3.0"
+const Version = "0.4.0"

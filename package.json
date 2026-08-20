@@ -1,6 +1,6 @@
 {
   "name": "@smooai/audit",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "A polyglot client SDK for tamper-evident, SQL-queryable audit logging: a canonical event schema, a per-org-per-day SHA-256 hash chain, and an emit client — with byte-for-byte parity across TypeScript, Python, Rust, Go, and .NET.",
   "homepage": "https://github.com/SmooAI/audit#readme",
   "bugs": {

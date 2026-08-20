@@ -12,7 +12,7 @@
 
   <PropertyGroup>
     <PackageId>SmooAI.Audit</PackageId>
-    <Version>0.3.0</Version>
+    <Version>0.4.0</Version>
     <Authors>SmooAI</Authors>
     <Company>SmooAI</Company>
     <Description>Polyglot client SDK for tamper-evident, SQL-queryable audit logging. .NET port of @smooai/audit — a canonical event schema, a per-org-per-day SHA-256 hash chain, and an emit client, verified byte-for-byte against a shared parity corpus.</Description>
