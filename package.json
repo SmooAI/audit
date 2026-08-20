@@ -57,7 +57,7 @@
     "go:fmt": "(cd go && gofmt -w .)",
     "go:fmt:check": "(cd go && test -z \"$(gofmt -l .)\")",
     "go:lint": "(cd go && go vet ./...)",
-    "go:test": "(cd go && go test -v ./...)",
+    "go:test": "(cd go && go test -count=1 -v ./...)",
     "lint": "oxlint . && pnpm run python:lint && pnpm run rust:lint && pnpm run go:lint",
     "lint:fix": "oxlint --fix . && pnpm run python:lint:fix",
     "pre-commit-check": "(zsh .husky/pre-commit)",

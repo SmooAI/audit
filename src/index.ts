@@ -16,7 +16,13 @@ export {
   type AuditAction,
 } from "./schema";
 export { canonicalJson } from "./canonical";
-export { computeEventHash, buildHashChain, verifyChain } from "./hash";
+export {
+  computeEventHash,
+  buildHashChain,
+  verifyChain,
+  type ChainVerification,
+  type VerifyFailureCode,
+} from "./hash";
 export { AuditClient, type AuditClientOptions, type SealedAuditEvent } from "./client";
 export {
   buildEnvelope,

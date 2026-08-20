@@ -42,6 +42,67 @@ public class AuditTests
         Assert.Equal(expectedHash, HashChain.ComputeEventHash(evt));
     }
 
+    // --- Chain verification -----------------------------------------------------------
+    // The fixtures above prove SEALING only — that a hash is reproducible in five languages.
+    // They say nothing about whether any of them can DETECT a broken chain, which is the
+    // property "tamper-evident" actually names. `chainFixtures` are real chains sealed by the
+    // TS builder and then genuinely tampered with, each carrying the verdict every language
+    // must return.
+
+    public static IEnumerable<object[]> ChainFixtures()
+    {
+        using var doc = JsonDocument.Parse(File.ReadAllText(CorpusPath()));
+        foreach (var fixture in doc.RootElement.GetProperty("chainFixtures").EnumerateArray())
+        {
+            yield return new object[]
+            {
+                fixture.GetProperty("name").GetString()!,
+                fixture.GetRawText(),
+            };
+        }
+    }
+
+    [Theory]
+    [MemberData(nameof(ChainFixtures))]
+    public void ChainFixtureVerdictMatches(string name, string fixtureJson)
+    {
+        _ = name; // surfaces as the test-case display name
+        using var doc = JsonDocument.Parse(fixtureJson);
+        var root = doc.RootElement;
+        var description = root.GetProperty("description").GetString()!;
+        var genesis = root.TryGetProperty("genesisPreviousHash", out var g) ? g.GetString() : null;
+        var events = JsonSerializer.Deserialize<List<AuditEvent>>(root.GetProperty("events").GetRawText(), Relaxed)!;
+        var expected = root.GetProperty("expected");
+
+        var result = HashChain.Verify(events, genesis);
+
+        Assert.True(result.Ok == expected.GetProperty("ok").GetBoolean(), description);
+        if (result.Ok)
+        {
+            return;
+        }
+
+        Assert.Equal(expected.GetProperty("brokenAt").GetInt32(), result.BrokenAt);
+        Assert.Equal(expected.GetProperty("code").GetString(), CodeWireName(result.Code!.Value));
+    }
+
+    /// <summary>The corpus carries the shared snake_case code names, not the C# enum spelling.</summary>
+    private static string CodeWireName(VerifyFailureCode code) => code switch
+    {
+        VerifyFailureCode.HashPreviousMismatch => "hash_previous_mismatch",
+        VerifyFailureCode.HashCurrentMismatch => "hash_current_mismatch",
+        _ => throw new ArgumentOutOfRangeException(nameof(code), code, null),
+    };
+
+    [Fact]
+    public void ChainCorpusContainsTamperedChains()
+    {
+        using var doc = JsonDocument.Parse(File.ReadAllText(CorpusPath()));
+        var fixtures = doc.RootElement.GetProperty("chainFixtures").EnumerateArray().ToList();
+        Assert.NotEmpty(fixtures);
+        Assert.Contains(fixtures, f => !f.GetProperty("expected").GetProperty("ok").GetBoolean());
+    }
+
     [Fact]
     public void BuildChainsHashPreviousAcrossEvents()
     {

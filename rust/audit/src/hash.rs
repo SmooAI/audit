@@ -43,6 +43,73 @@ pub fn build_hash_chain(events: Vec<AuditEvent>, chain_head: Option<String>) -> 
         .collect()
 }
 
+/// Why a chain failed to verify.
+///
+/// These codes are the cross-language contract — every SDK returns the same code
+/// for the same corruption, asserted by `chainFixtures` in
+/// `spec/parity-corpus.json`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum VerifyFailureCode {
+    /// An event's `hashPrevious` is not the prior event's `hashCurrent` — the
+    /// LINK is wrong: a reorder, a deletion, a truncated head, a rewritten link.
+    HashPreviousMismatch,
+    /// The event's own content no longer hashes to its stored `hashCurrent` —
+    /// the event BODY was edited after sealing.
+    HashCurrentMismatch,
+}
+
+/// The verdict from [`verify_chain`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ChainVerification {
+    /// Every link recomputed and matched.
+    Ok,
+    /// The first event that failed, and why.
+    Broken { broken_at: usize, code: VerifyFailureCode },
+}
+
+impl ChainVerification {
+    /// `true` when the chain verified intact.
+    pub fn is_ok(&self) -> bool {
+        matches!(self, ChainVerification::Ok)
+    }
+}
+
+/// Verify an ordered chain: recompute every `hashCurrent` and confirm each
+/// `hashPrevious` matches the prior event's `hashCurrent`.
+///
+/// `genesis_previous_hash` is the hash the FIRST event must link to — pass the
+/// chain head you already have when verifying a slice that continues an existing
+/// chain. `None` means `events` starts at the true beginning of the chain (first
+/// event of the org's day), where `hashPrevious` must be absent.
+///
+/// **What replay cannot see:** removing events from the TAIL leaves a chain that
+/// still verifies — every remaining link is genuine. Detecting that needs an
+/// external anchor (a stored chain head, an expected count) compared against the
+/// last event's `hashCurrent`. [`ChainVerification::Ok`] means "nothing here was
+/// altered", not "nothing is missing"; the corpus pins this as an explicit
+/// fixture so the limit stays visible.
+pub fn verify_chain(events: &[AuditEvent], genesis_previous_hash: Option<&str>) -> ChainVerification {
+    let mut previous: Option<String> = genesis_previous_hash.map(str::to_owned);
+    for (index, event) in events.iter().enumerate() {
+        if event.hash_previous != previous {
+            return ChainVerification::Broken {
+                broken_at: index,
+                code: VerifyFailureCode::HashPreviousMismatch,
+            };
+        }
+        let recomputed = event.compute_hash();
+        if event.hash_current.as_deref() != Some(recomputed.as_str()) {
+            return ChainVerification::Broken {
+                broken_at: index,
+                code: VerifyFailureCode::HashCurrentMismatch,
+            };
+        }
+        previous = Some(recomputed);
+    }
+    ChainVerification::Ok
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

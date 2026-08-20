@@ -2,7 +2,13 @@
 
 from .canonical import canonical_json
 from .client import AuditClient, AuditClientOptions
-from .hash import build_hash_chain, compute_event_hash
+from .hash import (
+    ChainVerification,
+    VerifyFailureCode,
+    build_hash_chain,
+    compute_event_hash,
+    verify_chain,
+)
 from .schema import (
     AUDIT_ACTIONS,
     AuditActorType,
@@ -22,8 +28,11 @@ __all__ = [
     "AuditEvent",
     "AuditOutcome",
     "AuditResource",
+    "ChainVerification",
+    "VerifyFailureCode",
     "build_hash_chain",
     "canonical_json",
     "compute_event_hash",
     "is_namespaced_action",
+    "verify_chain",
 ]

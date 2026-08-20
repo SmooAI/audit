@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { canonicalJson } from "./canonical";
 import { buildHashChain, computeEventHash, verifyChain } from "./hash";
+import type { AuditEvent } from "./schema";
 
 interface Fixture {
   name: string;
@@ -11,9 +12,17 @@ interface Fixture {
   expectedHash: string;
 }
 
+interface ChainFixture {
+  name: string;
+  description: string;
+  genesisPreviousHash?: string;
+  events: AuditEvent[];
+  expected: { ok: true } | { ok: false; brokenAt: number; code: string };
+}
+
 const corpus = JSON.parse(
   readFileSync(new URL("../spec/parity-corpus.json", import.meta.url), "utf8"),
-) as { fixtures: Fixture[] };
+) as { fixtures: Fixture[]; chainFixtures: ChainFixture[] };
 
 describe("parity corpus (spec/parity-corpus.json)", () => {
   it("has fixtures to check", () => {
@@ -84,4 +93,27 @@ describe("hash chain", () => {
     const result = verifyChain(chain);
     expect(result.ok).toBe(false);
   });
+});
+
+// The corpus proved SEALING only — that a hash is reproducible in five
+// languages. It said nothing about whether any of them can DETECT a broken
+// chain, which is the property the word "tamper-evident" actually names. These
+// fixtures are the detection half.
+describe("chain corpus (spec/parity-corpus.json → chainFixtures)", () => {
+  it("has chain fixtures, including at least one that must be detected as broken", () => {
+    expect(corpus.chainFixtures.length).toBeGreaterThan(0);
+    expect(corpus.chainFixtures.some((f) => !f.expected.ok)).toBe(true);
+  });
+
+  for (const fixture of corpus.chainFixtures) {
+    it(`${fixture.name}: ${fixture.description}`, () => {
+      const result = verifyChain(fixture.events, fixture.genesisPreviousHash);
+      expect(result.ok).toBe(fixture.expected.ok);
+      if (!fixture.expected.ok) {
+        if (result.ok) throw new Error("unreachable: asserted above");
+        expect(result.brokenAt).toBe(fixture.expected.brokenAt);
+        expect(result.code).toBe(fixture.expected.code);
+      }
+    });
+  }
 });

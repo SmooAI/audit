@@ -27,6 +27,22 @@ type corpus struct {
 		ExpectedCanonical string          `json:"expectedCanonical"`
 		ExpectedHash      string          `json:"expectedHash"`
 	} `json:"fixtures"`
+	// ChainFixtures are REAL chains sealed by the TS builder and then tampered
+	// with. `Expected` is the verdict every language must return — this is the
+	// half of the corpus that proves DETECTION rather than sealing.
+	ChainFixtures []struct {
+		Name                string        `json:"name"`
+		Description         string        `json:"description"`
+		GenesisPreviousHash string        `json:"genesisPreviousHash"`
+		Events              []AuditEvent  `json:"events"`
+		Expected            expectedChain `json:"expected"`
+	} `json:"chainFixtures"`
+}
+
+type expectedChain struct {
+	OK       bool              `json:"ok"`
+	BrokenAt int               `json:"brokenAt"`
+	Code     VerifyFailureCode `json:"code"`
 }
 
 func loadCorpus(t *testing.T) corpus {
@@ -314,5 +330,43 @@ func TestEmitHashUnchangedByTraceContext(t *testing.T) {
 				})
 			}
 		})
+	}
+}
+
+// TestChainCorpus is the detection gate. The fixture corpus above proves only
+// that a hash is reproducible in five languages; it says nothing about whether
+// any of them can SPOT a broken chain, which is the property "tamper-evident"
+// actually names.
+func TestChainCorpus(t *testing.T) {
+	c := loadCorpus(t)
+	if len(c.ChainFixtures) == 0 {
+		t.Fatal("chainFixtures missing from the corpus")
+	}
+	sawBroken := false
+	for _, f := range c.ChainFixtures {
+		if !f.Expected.OK {
+			sawBroken = true
+		}
+		t.Run(f.Name, func(t *testing.T) {
+			got, err := VerifyChain(f.Events, f.GenesisPreviousHash)
+			if err != nil {
+				t.Fatalf("VerifyChain: %v", err)
+			}
+			if got.OK != f.Expected.OK {
+				t.Fatalf("ok mismatch: got %v want %v — %s", got.OK, f.Expected.OK, f.Description)
+			}
+			if f.Expected.OK {
+				return
+			}
+			if got.BrokenAt != f.Expected.BrokenAt {
+				t.Fatalf("brokenAt mismatch: got %d want %d", got.BrokenAt, f.Expected.BrokenAt)
+			}
+			if got.Code != f.Expected.Code {
+				t.Fatalf("code mismatch: got %q want %q", got.Code, f.Expected.Code)
+			}
+		})
+	}
+	if !sawBroken {
+		t.Fatal("no tampered chain to detect — the corpus would prove nothing about verification")
 	}
 }
