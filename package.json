@@ -50,9 +50,10 @@
   },
   "scripts": {
     "build": "pnpm tsdown && pnpm run python:build && pnpm run rust:build && pnpm run go:build",
-    "check-all": "pnpm run version:check && pnpm run typecheck && pnpm run lint && pnpm run test && pnpm run rust:fmt:check && pnpm run rust:lint && pnpm run rust:test && pnpm run go:fmt:check && pnpm run go:lint && pnpm run go:test && pnpm run build",
+    "check-all": "pnpm run version:check && pnpm run typecheck && pnpm run lint && pnpm run format:check && pnpm run test && pnpm run rust:fmt:check && pnpm run rust:lint && pnpm run rust:test && pnpm run go:fmt:check && pnpm run go:lint && pnpm run go:test && pnpm run build",
     "ci:publish": "node scripts/ci-publish.mjs",
     "format": "oxfmt --write . && pnpm run python:format && pnpm run rust:fmt && pnpm run go:fmt",
+    "format:check": "oxfmt --check . && pnpm run python:format:check && pnpm run rust:fmt:check && pnpm run go:fmt:check",
     "go:build": "(cd go && go build ./...)",
     "go:fmt": "(cd go && gofmt -w .)",
     "go:fmt:check": "(cd go && test -z \"$(gofmt -l .)\")",
@@ -63,6 +64,7 @@
     "pre-commit-check": "(zsh .husky/pre-commit)",
     "python:build": "(cd python && uv run poe build)",
     "python:format": "(cd python && uv run poe format)",
+    "python:format:check": "(cd python && uv run poe format-check)",
     "python:install-dev": "(cd python && uv run poe install-dev)",
     "python:lint": "(cd python && uv run poe lint)",
     "python:lint:fix": "(cd python && uv run poe lint:fix)",
@@ -78,21 +80,13 @@
     "rust:test": "(cd rust/audit && cargo test --all-features)",
     "test": "vitest run && pnpm python:test && pnpm rust:test && pnpm go:test",
     "typecheck": "tsc --noEmit --skipLibCheck && pnpm run python:typecheck:errors && pnpm run rust:check && pnpm run go:build",
-    "version": "changeset version && node scripts/sync-versions.mjs",
+    "version": "changeset version && node scripts/sync-versions.mjs && pnpm format",
     "version:check": "node scripts/sync-versions.mjs --check",
     "version:sync": "node scripts/sync-versions.mjs",
     "watch": "tsdown --watch"
   },
   "dependencies": {
     "zod": "^4.0.0"
-  },
-  "peerDependencies": {
-    "@opentelemetry/api": "^1.9.0"
-  },
-  "peerDependenciesMeta": {
-    "@opentelemetry/api": {
-      "optional": true
-    }
   },
   "devDependencies": {
     "@changesets/cli": "^2.28.1",
@@ -106,6 +100,14 @@
     "vite": "^6.2.4",
     "vite-tsconfig-paths": "^5.1.4",
     "vitest": "^3.1.1"
+  },
+  "peerDependencies": {
+    "@opentelemetry/api": "^1.9.0"
+  },
+  "peerDependenciesMeta": {
+    "@opentelemetry/api": {
+      "optional": true
+    }
   },
   "engines": {
     "node": ">=20.0.0"

@@ -12,7 +12,6 @@
   Rust, Go, and .NET had nothing. A service in four of five languages could seal a
   chain it could never audit, which makes "tamper-evident" a claim rather than a
   capability.
-
   - New: `verify_chain` (Python, Rust), `VerifyChain` (Go), `HashChain.Verify`
     (.NET). All five return the same verdict shape: `ok`, `brokenAt`, and a shared
     failure code — `hash_previous_mismatch` (the link is wrong) or
