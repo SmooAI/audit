@@ -7,6 +7,13 @@ use crate::envelope::{envelope_json, TraceContext};
 use crate::error::AuditError;
 use crate::schema::AuditEvent;
 
+/// Default retry behaviour, shared with every other language SDK. The numbers
+/// live in `spec/parity-corpus.json`'s `retryPolicy` and are asserted there, so
+/// they cannot drift apart across the five implementations.
+pub const DEFAULT_MAX_RETRIES: usize = 3;
+/// Base backoff in milliseconds; doubles on each retry.
+pub const DEFAULT_RETRY_BACKOFF_MS: u64 = 100;
+
 /// Configuration for [`AuditClient`].
 #[derive(Debug, Clone)]
 pub struct AuditClientOptions {
@@ -14,6 +21,24 @@ pub struct AuditClientOptions {
     pub endpoint: String,
     /// Bearer token used to authenticate emit requests.
     pub token: String,
+    /// Total attempts on a transient failure (transport error or HTTP 5xx).
+    /// `None` uses [`DEFAULT_MAX_RETRIES`].
+    pub max_retries: Option<usize>,
+    /// Base backoff in ms, doubled on each retry. `None` uses
+    /// [`DEFAULT_RETRY_BACKOFF_MS`].
+    pub retry_backoff_ms: Option<u64>,
+}
+
+impl AuditClientOptions {
+    /// Options for `endpoint` + `token` with the shared default retry policy.
+    pub fn new(endpoint: impl Into<String>, token: impl Into<String>) -> Self {
+        Self {
+            endpoint: endpoint.into(),
+            token: token.into(),
+            max_retries: None,
+            retry_backoff_ms: None,
+        }
+    }
 }
 
 /// Emits audit events to a configurable ingest endpoint over HTTPS.
@@ -22,6 +47,8 @@ pub struct AuditClient {
     endpoint: String,
     token: String,
     http: reqwest::Client,
+    max_retries: usize,
+    retry_backoff_ms: u64,
 }
 
 impl AuditClient {
@@ -31,6 +58,8 @@ impl AuditClient {
             endpoint: options.endpoint,
             token: options.token,
             http: reqwest::Client::new(),
+            max_retries: options.max_retries.unwrap_or(DEFAULT_MAX_RETRIES),
+            retry_backoff_ms: options.retry_backoff_ms.unwrap_or(DEFAULT_RETRY_BACKOFF_MS),
         }
     }
 
@@ -51,13 +80,34 @@ impl AuditClient {
         // re-serialization — the wire body must be the exact canonical form so
         // the chain is replayable. Trace ids ride BESIDE it, never inside, so
         // they cannot perturb a hash.
+        // Built once, outside the retry loop: a retried POST must carry the SAME
+        // bytes, since ingest dedupes on the event's hash.
         let body = envelope_json(event, trace)?;
+
+        let mut last_error: Option<AuditError> = None;
+        for attempt in 0..self.max_retries {
+            if attempt > 0 {
+                let wait = self.retry_backoff_ms * (1u64 << (attempt - 1));
+                tokio::time::sleep(std::time::Duration::from_millis(wait)).await;
+            }
+            match self.post(&body).await {
+                Ok(()) => return Ok(()),
+                // A 4xx will say the same thing on the next attempt, so surface
+                // it now rather than burning the remaining attempts.
+                Err(error) if !is_transient(&error) => return Err(error),
+                Err(error) => last_error = Some(error),
+            }
+        }
+        Err(last_error.expect("max_retries >= 1 leaves an error behind"))
+    }
+
+    async fn post(&self, body: &str) -> Result<(), AuditError> {
         let response = self
             .http
             .post(&self.endpoint)
             .header("content-type", "application/json")
             .bearer_auth(&self.token)
-            .body(body)
+            .body(body.to_owned())
             .send()
             .await?;
         if !response.status().is_success() {
@@ -66,5 +116,14 @@ impl AuditClient {
             });
         }
         Ok(())
+    }
+}
+
+/// Retry only what a retry can fix: the request never reached a verdict, or the
+/// server said it could not answer right now.
+fn is_transient(error: &AuditError) -> bool {
+    match error {
+        AuditError::Status { status } => *status >= 500,
+        _ => true,
     }
 }

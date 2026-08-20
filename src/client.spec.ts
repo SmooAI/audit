@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 import { canonicalJson } from "./canonical";
 import { AuditClient } from "./client";
@@ -80,5 +81,38 @@ describe("AuditClient.emit", () => {
 
     await expect(client.emit(event)).rejects.toThrow(/ECONNRESET/);
     expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+});
+
+// The retry policy is five hand-written implementations of the same numbers
+// unless something asserts they are the same numbers. This is that something.
+describe("retry policy defaults match spec/parity-corpus.json", () => {
+  const policy = JSON.parse(
+    readFileSync(new URL("../spec/parity-corpus.json", import.meta.url), "utf8"),
+  ).retryPolicy as { maxAttempts: number; baseBackoffMs: number; backoffMultiplier: number };
+
+  it("uses maxAttempts attempts before giving up", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(new Response(null, { status: 503 }));
+    const client = new AuditClient({
+      endpoint: "https://audit.example/events",
+      token: "t",
+      retryBackoffMs: 1,
+      fetchImpl,
+    });
+
+    await expect(client.emit(event)).rejects.toThrow();
+    expect(fetchImpl).toHaveBeenCalledTimes(policy.maxAttempts);
+  });
+
+  it("defaults maxRetries and retryBackoffMs to the corpus values", () => {
+    const client = new AuditClient({ endpoint: "https://audit.example/events", token: "t" });
+    // Reading the private fields is the point: they ARE the defaults under test.
+    const internals = client as unknown as { maxRetries: number; retryBackoffMs: number };
+    expect(internals.maxRetries).toBe(policy.maxAttempts);
+    expect(internals.retryBackoffMs).toBe(policy.baseBackoffMs);
+  });
+
+  it("doubles the backoff, matching backoffMultiplier", () => {
+    expect(policy.backoffMultiplier).toBe(2);
   });
 });

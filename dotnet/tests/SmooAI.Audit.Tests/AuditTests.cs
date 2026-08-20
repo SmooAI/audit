@@ -127,6 +127,68 @@ public class AuditTests
         Assert.NotNull(chain[1].HashCurrent);
     }
 
+    // --- Emit retry -------------------------------------------------------------------
+    // An audit event that silently fails to emit is a hole in the record, so the client
+    // retries what a retry can fix — a transport error or a 5xx — and only that. The
+    // numbers live in the corpus so five implementations cannot quietly diverge.
+
+    /// <summary>Answers every request with a fixed status and counts the attempts.</summary>
+    private sealed class CountingHandler(HttpStatusCode status) : HttpMessageHandler
+    {
+        public int Attempts { get; private set; }
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            Attempts++;
+            return Task.FromResult(new HttpResponseMessage(status));
+        }
+    }
+
+    private static JsonElement RetryPolicy()
+    {
+        using var doc = JsonDocument.Parse(File.ReadAllText(CorpusPath()));
+        return doc.RootElement.GetProperty("retryPolicy").Clone();
+    }
+
+    [Fact]
+    public void DefaultsMatchTheSharedRetryPolicy()
+    {
+        var policy = RetryPolicy();
+        Assert.Equal(policy.GetProperty("maxAttempts").GetInt32(), AuditClientOptions.DefaultMaxRetries);
+        Assert.Equal(policy.GetProperty("baseBackoffMs").GetInt32(), AuditClientOptions.DefaultRetryBackoffMs);
+        Assert.Equal(2, policy.GetProperty("backoffMultiplier").GetInt32());
+
+        var options = new AuditClientOptions { Endpoint = "http://audit.test/ingest", Token = "t" };
+        Assert.Equal(AuditClientOptions.DefaultMaxRetries, options.MaxRetries);
+        Assert.Equal(AuditClientOptions.DefaultRetryBackoffMs, options.RetryBackoffMs);
+    }
+
+    [Fact]
+    public async Task ServerErrorsAreRetriedUpToMaxAttempts()
+    {
+        using var handler = new CountingHandler(HttpStatusCode.ServiceUnavailable);
+        using var http = new HttpClient(handler);
+        var client = new AuditClient(
+            new AuditClientOptions { Endpoint = "http://audit.test/ingest", Token = "t", RetryBackoffMs = 1 },
+            http);
+
+        await Assert.ThrowsAsync<HttpRequestException>(() => client.EmitAsync(SampleEvent()));
+        Assert.Equal(RetryPolicy().GetProperty("maxAttempts").GetInt32(), handler.Attempts);
+    }
+
+    [Fact]
+    public async Task ClientErrorsFailFast()
+    {
+        using var handler = new CountingHandler(HttpStatusCode.BadRequest);
+        using var http = new HttpClient(handler);
+        var client = new AuditClient(
+            new AuditClientOptions { Endpoint = "http://audit.test/ingest", Token = "t", RetryBackoffMs = 1 },
+            http);
+
+        await Assert.ThrowsAsync<HttpRequestException>(() => client.EmitAsync(SampleEvent()));
+        Assert.Equal(1, handler.Attempts);
+    }
+
     // --- Envelope trace correlation ---------------------------------------------------
     // traceId/spanId ride OUTSIDE the hashed event, so an Activity must never move a hash.
 

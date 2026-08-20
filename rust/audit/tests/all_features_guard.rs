@@ -14,3 +14,12 @@ fn otel_gated_tests_are_not_silently_skipped() {
          `pnpm rust:test` and CI run)."
     );
 }
+
+#[cfg(not(feature = "client"))]
+#[test]
+fn client_gated_tests_are_not_silently_skipped() {
+    panic!(
+        "tests/emit_retry.rs is #![cfg(feature = \"client\")] and the feature is off, so the emit \
+         retry tests reported \"0 passed; ok\" without running. Use `cargo test --all-features`."
+    );
+}

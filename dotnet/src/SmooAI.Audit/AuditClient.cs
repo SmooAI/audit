@@ -7,11 +7,27 @@ namespace SmooAI.Audit;
 /// <summary>Configuration for <see cref="AuditClient"/>.</summary>
 public sealed record AuditClientOptions
 {
+    /// <summary>
+    /// Default retry behaviour, shared with every other language SDK. The numbers live in
+    /// <c>spec/parity-corpus.json</c>'s <c>retryPolicy</c> and are asserted there, so they cannot
+    /// drift apart across the five implementations.
+    /// </summary>
+    public const int DefaultMaxRetries = 3;
+
+    /// <summary>Base backoff in milliseconds; doubles on each retry.</summary>
+    public const int DefaultRetryBackoffMs = 100;
+
     /// <summary>Base URL of the audit ingest endpoint.</summary>
     public required string Endpoint { get; init; }
 
     /// <summary>Bearer token used to authenticate emit requests.</summary>
     public required string Token { get; init; }
+
+    /// <summary>Total attempts on a transient failure (transport error or HTTP 5xx).</summary>
+    public int MaxRetries { get; init; } = DefaultMaxRetries;
+
+    /// <summary>Base backoff in milliseconds, doubled on each retry.</summary>
+    public int RetryBackoffMs { get; init; } = DefaultRetryBackoffMs;
 }
 
 /// <summary>
@@ -42,9 +58,12 @@ public sealed class AuditClient
     /// <summary>
     /// Seal the event (compute + stamp <see cref="AuditEvent.HashCurrent"/>) and POST the canonical
     /// JSON envelope — the sealed event plus the current <see cref="Activity"/>'s W3C trace ids, when
-    /// one is active — to the endpoint with an <c>Authorization: Bearer</c> header. Throws on a
-    /// non-success status. ponytail: single POST, no retry/backoff — add it when a real transport SLA
-    /// demands it.
+    /// one is active — to the endpoint with an <c>Authorization: Bearer</c> header.
+    /// <para>
+    /// Transient failures (transport errors and HTTP 5xx) are retried with exponential backoff; a
+    /// 4xx throws immediately, since it will say the same thing on the next attempt. An audit event
+    /// that silently fails to emit is a hole in the record, so the final failure always throws.
+    /// </para>
     /// </summary>
     public async Task EmitAsync(AuditEvent @event, CancellationToken cancellationToken = default)
     {
@@ -52,8 +71,36 @@ public sealed class AuditClient
         // enter the preimage.
         var sealedEvent = @event with { HashCurrent = HashChain.ComputeEventHash(@event) };
         var (traceId, spanId) = CurrentTraceContext();
+        // Built once, outside the retry loop: a retried POST must carry the SAME bytes, since
+        // ingest dedupes on the event's hash.
         var body = Canonical.ToCanonicalJsonEnvelope(sealedEvent, traceId, spanId);
 
+        var attempts = Math.Max(1, _options.MaxRetries);
+        Exception? lastError = null;
+        for (var attempt = 0; attempt < attempts; attempt++)
+        {
+            if (attempt > 0)
+            {
+                var wait = _options.RetryBackoffMs * (1 << (attempt - 1));
+                await Task.Delay(wait, cancellationToken).ConfigureAwait(false);
+            }
+
+            try
+            {
+                await PostAsync(body, cancellationToken).ConfigureAwait(false);
+                return;
+            }
+            catch (HttpRequestException error) when (IsTransient(error))
+            {
+                lastError = error;
+            }
+        }
+
+        throw lastError!;
+    }
+
+    private async Task PostAsync(string body, CancellationToken cancellationToken)
+    {
         using var request = new HttpRequestMessage(HttpMethod.Post, _options.Endpoint)
         {
             Content = new StringContent(body, Encoding.UTF8, "application/json"),
@@ -63,6 +110,13 @@ public sealed class AuditClient
         using var response = await _http.SendAsync(request, cancellationToken).ConfigureAwait(false);
         response.EnsureSuccessStatusCode();
     }
+
+    /// <summary>
+    /// Retry only what a retry can fix: the request never reached a verdict (no status at all), or
+    /// the server said it could not answer right now.
+    /// </summary>
+    private static bool IsTransient(HttpRequestException error) =>
+        error.StatusCode is null || (int)error.StatusCode >= 500;
 
     /// <summary>
     /// W3C trace ids of the ambient <see cref="Activity"/>, or <c>(null, null)</c> when there is no

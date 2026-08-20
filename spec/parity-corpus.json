@@ -203,6 +203,14 @@
       "expectedHash": "0f99949be0176ef0271b41c158504e6ff355dc5716626754a7631c3e72ce6d40"
     }
   ],
+  "retryPolicy": {
+    "$comment": "The emit client's DEFAULT retry behaviour, shared by every language so the numbers are asserted rather than hand-copied five times. An audit event that silently fails to emit is a hole in the record, so every client retries — but only what a retry can fix. `retryOn` is transient (the request never reached a verdict, or the server said it could not answer right now); `failFastOn` will not succeed on a second try, so surfacing it immediately is the correct answer, not a missed opportunity. Attempt N waits baseBackoffMs * backoffMultiplier^(N-2) before firing (attempt 1 is immediate). The retried request carries the SAME canonical bytes, because ingest dedupes on the event hash.",
+    "maxAttempts": 3,
+    "baseBackoffMs": 100,
+    "backoffMultiplier": 2,
+    "retryOn": ["transport_error", "http_5xx"],
+    "failFastOn": ["http_4xx"]
+  },
   "$chainComment": "Corrupted-chain vectors for verifyChain / verify_chain / VerifyChain / HashChain.Verify. Each `events` array is a REAL chain sealed by the TS builder and then tampered with; `expected` is the verdict every language must return — `ok`, plus `brokenAt` (index of the first bad link) and `code` when it fails. `code` is the cross-language contract: \"hash_previous_mismatch\" (the LINK is wrong — reorder, deletion, rewritten hashPrevious, missing head) or \"hash_current_mismatch\" (the event BODY was edited after sealing). `genesisPreviousHash`, when present, is the chain head the first event must link to. Regenerate with `pnpm tsdown && node scripts/gen-chain-fixtures.mjs` — never hand-edit an expected value.",
   "chainFixtures": [
     {
