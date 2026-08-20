@@ -202,5 +202,706 @@
             "expectedCanonical": "{\"action\":\"fieldops.access_denied\",\"actorId\":\"client-3\",\"actorType\":\"api_client\",\"id\":\"01JDEN00000000000000000001\",\"metadata\":{},\"organizationId\":\"org-1\",\"outcome\":\"denied\",\"reason\":\"insufficient role\",\"resource\":{\"id\":\"site-1\",\"type\":\"fieldops_site\"},\"timestamp\":\"2026-07-02T00:00:00.000Z\"}",
             "expectedHash": "0f99949be0176ef0271b41c158504e6ff355dc5716626754a7631c3e72ce6d40"
         }
+    ],
+    "$chainComment": "Corrupted-chain vectors for verifyChain / verify_chain / VerifyChain / HashChain.Verify. Each `events` array is a REAL chain sealed by the TS builder and then tampered with; `expected` is the verdict every language must return — `ok`, plus `brokenAt` (index of the first bad link) and `code` when it fails. `code` is the cross-language contract: \"hash_previous_mismatch\" (the LINK is wrong — reorder, deletion, rewritten hashPrevious, missing head) or \"hash_current_mismatch\" (the event BODY was edited after sealing). `genesisPreviousHash`, when present, is the chain head the first event must link to. Regenerate with `pnpm tsdown && node scripts/gen-chain-fixtures.mjs` — never hand-edit an expected value.",
+    "chainFixtures": [
+        {
+            "name": "intact_chain",
+            "description": "Control: a correctly sealed four-event chain starting at the beginning of the day. Must verify.",
+            "events": [
+                {
+                    "organizationId": "org-1",
+                    "actorType": "user",
+                    "actorId": "user-1",
+                    "resource": {
+                        "type": "crm.contact",
+                        "id": "c-1"
+                    },
+                    "outcome": "success",
+                    "metadata": {},
+                    "id": "01CHAIN0000000000000000001",
+                    "action": "crm.contact_created",
+                    "timestamp": "2026-05-17T12:00:00.000Z",
+                    "hashCurrent": "6130fff1217324c30e9cc59e88f3c91d252432119d55194620df6b1f27e758f4"
+                },
+                {
+                    "organizationId": "org-1",
+                    "actorType": "user",
+                    "actorId": "user-1",
+                    "resource": {
+                        "type": "crm.contact",
+                        "id": "c-1"
+                    },
+                    "outcome": "success",
+                    "metadata": {},
+                    "id": "01CHAIN0000000000000000002",
+                    "action": "crm.contact_updated",
+                    "timestamp": "2026-05-17T12:00:01.000Z",
+                    "hashPrevious": "6130fff1217324c30e9cc59e88f3c91d252432119d55194620df6b1f27e758f4",
+                    "hashCurrent": "772e954fabc9910374479d3e2d70a3ac88c3316292bcf11a0c7d6743116d350a"
+                },
+                {
+                    "organizationId": "org-1",
+                    "actorType": "user",
+                    "actorId": "user-1",
+                    "resource": {
+                        "type": "crm.contact",
+                        "id": "c-1"
+                    },
+                    "outcome": "success",
+                    "metadata": {},
+                    "id": "01CHAIN0000000000000000003",
+                    "action": "crm.contact_merged",
+                    "timestamp": "2026-05-17T12:00:02.000Z",
+                    "hashPrevious": "772e954fabc9910374479d3e2d70a3ac88c3316292bcf11a0c7d6743116d350a",
+                    "hashCurrent": "b99be950c3108de932e3db265fb4b9dec74f0c0cbda6d4ecb42939eaf9ca6a03"
+                },
+                {
+                    "organizationId": "org-1",
+                    "actorType": "user",
+                    "actorId": "user-1",
+                    "resource": {
+                        "type": "crm.contact",
+                        "id": "c-1"
+                    },
+                    "outcome": "success",
+                    "metadata": {},
+                    "id": "01CHAIN0000000000000000004",
+                    "action": "crm.contact_deleted",
+                    "timestamp": "2026-05-17T12:00:03.000Z",
+                    "hashPrevious": "b99be950c3108de932e3db265fb4b9dec74f0c0cbda6d4ecb42939eaf9ca6a03",
+                    "hashCurrent": "323345c8f97de588b133d82c2697bd415e3b5cf670243c5fd52d9055c4728fe1"
+                }
+            ],
+            "expected": {
+                "ok": true
+            }
+        },
+        {
+            "name": "intact_continuation_chain",
+            "description": "A slice that continues an existing chain: the first event links to genesisPreviousHash rather than being first-of-day. Verifying it WITHOUT that seed must fail at index 0 — see unanchored_continuation_chain.",
+            "genesisPreviousHash": "1111111111111111111111111111111111111111111111111111111111111111",
+            "events": [
+                {
+                    "organizationId": "org-1",
+                    "actorType": "user",
+                    "actorId": "user-1",
+                    "resource": {
+                        "type": "crm.contact",
+                        "id": "c-1"
+                    },
+                    "outcome": "success",
+                    "metadata": {},
+                    "id": "01CHAIN0000000000000000001",
+                    "action": "crm.contact_created",
+                    "timestamp": "2026-05-17T12:00:00.000Z",
+                    "hashPrevious": "1111111111111111111111111111111111111111111111111111111111111111",
+                    "hashCurrent": "fbb2bde91cc87996ae99d977f2c071f900a5c5e0aeedfdcaab3fbfd842d48515"
+                },
+                {
+                    "organizationId": "org-1",
+                    "actorType": "user",
+                    "actorId": "user-1",
+                    "resource": {
+                        "type": "crm.contact",
+                        "id": "c-1"
+                    },
+                    "outcome": "success",
+                    "metadata": {},
+                    "id": "01CHAIN0000000000000000002",
+                    "action": "crm.contact_updated",
+                    "timestamp": "2026-05-17T12:00:01.000Z",
+                    "hashPrevious": "fbb2bde91cc87996ae99d977f2c071f900a5c5e0aeedfdcaab3fbfd842d48515",
+                    "hashCurrent": "46f6870693e0d5aedd8fa47d8d394d7fb59d2e5d39049b3c7e1db69a4e41a927"
+                },
+                {
+                    "organizationId": "org-1",
+                    "actorType": "user",
+                    "actorId": "user-1",
+                    "resource": {
+                        "type": "crm.contact",
+                        "id": "c-1"
+                    },
+                    "outcome": "success",
+                    "metadata": {},
+                    "id": "01CHAIN0000000000000000003",
+                    "action": "crm.contact_merged",
+                    "timestamp": "2026-05-17T12:00:02.000Z",
+                    "hashPrevious": "46f6870693e0d5aedd8fa47d8d394d7fb59d2e5d39049b3c7e1db69a4e41a927",
+                    "hashCurrent": "8e17bafb08871f7cee9a0659e81978156463cf8d67be1594b1d1ec111ef06bde"
+                },
+                {
+                    "organizationId": "org-1",
+                    "actorType": "user",
+                    "actorId": "user-1",
+                    "resource": {
+                        "type": "crm.contact",
+                        "id": "c-1"
+                    },
+                    "outcome": "success",
+                    "metadata": {},
+                    "id": "01CHAIN0000000000000000004",
+                    "action": "crm.contact_deleted",
+                    "timestamp": "2026-05-17T12:00:03.000Z",
+                    "hashPrevious": "8e17bafb08871f7cee9a0659e81978156463cf8d67be1594b1d1ec111ef06bde",
+                    "hashCurrent": "aa5386d20241e0b7fec7b89df858c8d42b551eb51d5be2424681f358d012be2c"
+                }
+            ],
+            "expected": {
+                "ok": true
+            }
+        },
+        {
+            "name": "unanchored_continuation_chain",
+            "description": "The same continuation slice verified with no genesisPreviousHash. The events are untouched, but a verifier that cannot be told the chain head reports a broken first link — which is why verify takes the seed.",
+            "events": [
+                {
+                    "organizationId": "org-1",
+                    "actorType": "user",
+                    "actorId": "user-1",
+                    "resource": {
+                        "type": "crm.contact",
+                        "id": "c-1"
+                    },
+                    "outcome": "success",
+                    "metadata": {},
+                    "id": "01CHAIN0000000000000000001",
+                    "action": "crm.contact_created",
+                    "timestamp": "2026-05-17T12:00:00.000Z",
+                    "hashPrevious": "1111111111111111111111111111111111111111111111111111111111111111",
+                    "hashCurrent": "fbb2bde91cc87996ae99d977f2c071f900a5c5e0aeedfdcaab3fbfd842d48515"
+                },
+                {
+                    "organizationId": "org-1",
+                    "actorType": "user",
+                    "actorId": "user-1",
+                    "resource": {
+                        "type": "crm.contact",
+                        "id": "c-1"
+                    },
+                    "outcome": "success",
+                    "metadata": {},
+                    "id": "01CHAIN0000000000000000002",
+                    "action": "crm.contact_updated",
+                    "timestamp": "2026-05-17T12:00:01.000Z",
+                    "hashPrevious": "fbb2bde91cc87996ae99d977f2c071f900a5c5e0aeedfdcaab3fbfd842d48515",
+                    "hashCurrent": "46f6870693e0d5aedd8fa47d8d394d7fb59d2e5d39049b3c7e1db69a4e41a927"
+                },
+                {
+                    "organizationId": "org-1",
+                    "actorType": "user",
+                    "actorId": "user-1",
+                    "resource": {
+                        "type": "crm.contact",
+                        "id": "c-1"
+                    },
+                    "outcome": "success",
+                    "metadata": {},
+                    "id": "01CHAIN0000000000000000003",
+                    "action": "crm.contact_merged",
+                    "timestamp": "2026-05-17T12:00:02.000Z",
+                    "hashPrevious": "46f6870693e0d5aedd8fa47d8d394d7fb59d2e5d39049b3c7e1db69a4e41a927",
+                    "hashCurrent": "8e17bafb08871f7cee9a0659e81978156463cf8d67be1594b1d1ec111ef06bde"
+                },
+                {
+                    "organizationId": "org-1",
+                    "actorType": "user",
+                    "actorId": "user-1",
+                    "resource": {
+                        "type": "crm.contact",
+                        "id": "c-1"
+                    },
+                    "outcome": "success",
+                    "metadata": {},
+                    "id": "01CHAIN0000000000000000004",
+                    "action": "crm.contact_deleted",
+                    "timestamp": "2026-05-17T12:00:03.000Z",
+                    "hashPrevious": "8e17bafb08871f7cee9a0659e81978156463cf8d67be1594b1d1ec111ef06bde",
+                    "hashCurrent": "aa5386d20241e0b7fec7b89df858c8d42b551eb51d5be2424681f358d012be2c"
+                }
+            ],
+            "expected": {
+                "ok": false,
+                "brokenAt": 0,
+                "code": "hash_previous_mismatch"
+            }
+        },
+        {
+            "name": "mutated_event_field",
+            "description": "actorId rewritten on event 1 after sealing. The stored hashCurrent no longer covers the content.",
+            "events": [
+                {
+                    "organizationId": "org-1",
+                    "actorType": "user",
+                    "actorId": "user-1",
+                    "resource": {
+                        "type": "crm.contact",
+                        "id": "c-1"
+                    },
+                    "outcome": "success",
+                    "metadata": {},
+                    "id": "01CHAIN0000000000000000001",
+                    "action": "crm.contact_created",
+                    "timestamp": "2026-05-17T12:00:00.000Z",
+                    "hashCurrent": "6130fff1217324c30e9cc59e88f3c91d252432119d55194620df6b1f27e758f4"
+                },
+                {
+                    "organizationId": "org-1",
+                    "actorType": "user",
+                    "actorId": "user-attacker",
+                    "resource": {
+                        "type": "crm.contact",
+                        "id": "c-1"
+                    },
+                    "outcome": "success",
+                    "metadata": {},
+                    "id": "01CHAIN0000000000000000002",
+                    "action": "crm.contact_updated",
+                    "timestamp": "2026-05-17T12:00:01.000Z",
+                    "hashPrevious": "6130fff1217324c30e9cc59e88f3c91d252432119d55194620df6b1f27e758f4",
+                    "hashCurrent": "772e954fabc9910374479d3e2d70a3ac88c3316292bcf11a0c7d6743116d350a"
+                },
+                {
+                    "organizationId": "org-1",
+                    "actorType": "user",
+                    "actorId": "user-1",
+                    "resource": {
+                        "type": "crm.contact",
+                        "id": "c-1"
+                    },
+                    "outcome": "success",
+                    "metadata": {},
+                    "id": "01CHAIN0000000000000000003",
+                    "action": "crm.contact_merged",
+                    "timestamp": "2026-05-17T12:00:02.000Z",
+                    "hashPrevious": "772e954fabc9910374479d3e2d70a3ac88c3316292bcf11a0c7d6743116d350a",
+                    "hashCurrent": "b99be950c3108de932e3db265fb4b9dec74f0c0cbda6d4ecb42939eaf9ca6a03"
+                },
+                {
+                    "organizationId": "org-1",
+                    "actorType": "user",
+                    "actorId": "user-1",
+                    "resource": {
+                        "type": "crm.contact",
+                        "id": "c-1"
+                    },
+                    "outcome": "success",
+                    "metadata": {},
+                    "id": "01CHAIN0000000000000000004",
+                    "action": "crm.contact_deleted",
+                    "timestamp": "2026-05-17T12:00:03.000Z",
+                    "hashPrevious": "b99be950c3108de932e3db265fb4b9dec74f0c0cbda6d4ecb42939eaf9ca6a03",
+                    "hashCurrent": "323345c8f97de588b133d82c2697bd415e3b5cf670243c5fd52d9055c4728fe1"
+                }
+            ],
+            "expected": {
+                "ok": false,
+                "brokenAt": 1,
+                "code": "hash_current_mismatch"
+            }
+        },
+        {
+            "name": "tampered_timestamp",
+            "description": "Event 0's timestamp backdated after sealing — the classic 'this happened earlier than it did' edit.",
+            "events": [
+                {
+                    "organizationId": "org-1",
+                    "actorType": "user",
+                    "actorId": "user-1",
+                    "resource": {
+                        "type": "crm.contact",
+                        "id": "c-1"
+                    },
+                    "outcome": "success",
+                    "metadata": {},
+                    "id": "01CHAIN0000000000000000001",
+                    "action": "crm.contact_created",
+                    "timestamp": "2026-05-17T11:59:00.000Z",
+                    "hashCurrent": "6130fff1217324c30e9cc59e88f3c91d252432119d55194620df6b1f27e758f4"
+                },
+                {
+                    "organizationId": "org-1",
+                    "actorType": "user",
+                    "actorId": "user-1",
+                    "resource": {
+                        "type": "crm.contact",
+                        "id": "c-1"
+                    },
+                    "outcome": "success",
+                    "metadata": {},
+                    "id": "01CHAIN0000000000000000002",
+                    "action": "crm.contact_updated",
+                    "timestamp": "2026-05-17T12:00:01.000Z",
+                    "hashPrevious": "6130fff1217324c30e9cc59e88f3c91d252432119d55194620df6b1f27e758f4",
+                    "hashCurrent": "772e954fabc9910374479d3e2d70a3ac88c3316292bcf11a0c7d6743116d350a"
+                },
+                {
+                    "organizationId": "org-1",
+                    "actorType": "user",
+                    "actorId": "user-1",
+                    "resource": {
+                        "type": "crm.contact",
+                        "id": "c-1"
+                    },
+                    "outcome": "success",
+                    "metadata": {},
+                    "id": "01CHAIN0000000000000000003",
+                    "action": "crm.contact_merged",
+                    "timestamp": "2026-05-17T12:00:02.000Z",
+                    "hashPrevious": "772e954fabc9910374479d3e2d70a3ac88c3316292bcf11a0c7d6743116d350a",
+                    "hashCurrent": "b99be950c3108de932e3db265fb4b9dec74f0c0cbda6d4ecb42939eaf9ca6a03"
+                },
+                {
+                    "organizationId": "org-1",
+                    "actorType": "user",
+                    "actorId": "user-1",
+                    "resource": {
+                        "type": "crm.contact",
+                        "id": "c-1"
+                    },
+                    "outcome": "success",
+                    "metadata": {},
+                    "id": "01CHAIN0000000000000000004",
+                    "action": "crm.contact_deleted",
+                    "timestamp": "2026-05-17T12:00:03.000Z",
+                    "hashPrevious": "b99be950c3108de932e3db265fb4b9dec74f0c0cbda6d4ecb42939eaf9ca6a03",
+                    "hashCurrent": "323345c8f97de588b133d82c2697bd415e3b5cf670243c5fd52d9055c4728fe1"
+                }
+            ],
+            "expected": {
+                "ok": false,
+                "brokenAt": 0,
+                "code": "hash_current_mismatch"
+            }
+        },
+        {
+            "name": "reordered_pair",
+            "description": "Events 1 and 2 swapped. Both events are individually authentic; only their ORDER is wrong, so the break shows up as a link mismatch, not a content mismatch.",
+            "events": [
+                {
+                    "organizationId": "org-1",
+                    "actorType": "user",
+                    "actorId": "user-1",
+                    "resource": {
+                        "type": "crm.contact",
+                        "id": "c-1"
+                    },
+                    "outcome": "success",
+                    "metadata": {},
+                    "id": "01CHAIN0000000000000000001",
+                    "action": "crm.contact_created",
+                    "timestamp": "2026-05-17T12:00:00.000Z",
+                    "hashCurrent": "6130fff1217324c30e9cc59e88f3c91d252432119d55194620df6b1f27e758f4"
+                },
+                {
+                    "organizationId": "org-1",
+                    "actorType": "user",
+                    "actorId": "user-1",
+                    "resource": {
+                        "type": "crm.contact",
+                        "id": "c-1"
+                    },
+                    "outcome": "success",
+                    "metadata": {},
+                    "id": "01CHAIN0000000000000000003",
+                    "action": "crm.contact_merged",
+                    "timestamp": "2026-05-17T12:00:02.000Z",
+                    "hashPrevious": "772e954fabc9910374479d3e2d70a3ac88c3316292bcf11a0c7d6743116d350a",
+                    "hashCurrent": "b99be950c3108de932e3db265fb4b9dec74f0c0cbda6d4ecb42939eaf9ca6a03"
+                },
+                {
+                    "organizationId": "org-1",
+                    "actorType": "user",
+                    "actorId": "user-1",
+                    "resource": {
+                        "type": "crm.contact",
+                        "id": "c-1"
+                    },
+                    "outcome": "success",
+                    "metadata": {},
+                    "id": "01CHAIN0000000000000000002",
+                    "action": "crm.contact_updated",
+                    "timestamp": "2026-05-17T12:00:01.000Z",
+                    "hashPrevious": "6130fff1217324c30e9cc59e88f3c91d252432119d55194620df6b1f27e758f4",
+                    "hashCurrent": "772e954fabc9910374479d3e2d70a3ac88c3316292bcf11a0c7d6743116d350a"
+                },
+                {
+                    "organizationId": "org-1",
+                    "actorType": "user",
+                    "actorId": "user-1",
+                    "resource": {
+                        "type": "crm.contact",
+                        "id": "c-1"
+                    },
+                    "outcome": "success",
+                    "metadata": {},
+                    "id": "01CHAIN0000000000000000004",
+                    "action": "crm.contact_deleted",
+                    "timestamp": "2026-05-17T12:00:03.000Z",
+                    "hashPrevious": "b99be950c3108de932e3db265fb4b9dec74f0c0cbda6d4ecb42939eaf9ca6a03",
+                    "hashCurrent": "323345c8f97de588b133d82c2697bd415e3b5cf670243c5fd52d9055c4728fe1"
+                }
+            ],
+            "expected": {
+                "ok": false,
+                "brokenAt": 1,
+                "code": "hash_previous_mismatch"
+            }
+        },
+        {
+            "name": "broken_hash_previous_link",
+            "description": "Event 2's hashPrevious overwritten with a plausible-looking 64-hex value; every event body is untouched.",
+            "events": [
+                {
+                    "organizationId": "org-1",
+                    "actorType": "user",
+                    "actorId": "user-1",
+                    "resource": {
+                        "type": "crm.contact",
+                        "id": "c-1"
+                    },
+                    "outcome": "success",
+                    "metadata": {},
+                    "id": "01CHAIN0000000000000000001",
+                    "action": "crm.contact_created",
+                    "timestamp": "2026-05-17T12:00:00.000Z",
+                    "hashCurrent": "6130fff1217324c30e9cc59e88f3c91d252432119d55194620df6b1f27e758f4"
+                },
+                {
+                    "organizationId": "org-1",
+                    "actorType": "user",
+                    "actorId": "user-1",
+                    "resource": {
+                        "type": "crm.contact",
+                        "id": "c-1"
+                    },
+                    "outcome": "success",
+                    "metadata": {},
+                    "id": "01CHAIN0000000000000000002",
+                    "action": "crm.contact_updated",
+                    "timestamp": "2026-05-17T12:00:01.000Z",
+                    "hashPrevious": "6130fff1217324c30e9cc59e88f3c91d252432119d55194620df6b1f27e758f4",
+                    "hashCurrent": "772e954fabc9910374479d3e2d70a3ac88c3316292bcf11a0c7d6743116d350a"
+                },
+                {
+                    "organizationId": "org-1",
+                    "actorType": "user",
+                    "actorId": "user-1",
+                    "resource": {
+                        "type": "crm.contact",
+                        "id": "c-1"
+                    },
+                    "outcome": "success",
+                    "metadata": {},
+                    "id": "01CHAIN0000000000000000003",
+                    "action": "crm.contact_merged",
+                    "timestamp": "2026-05-17T12:00:02.000Z",
+                    "hashPrevious": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                    "hashCurrent": "b99be950c3108de932e3db265fb4b9dec74f0c0cbda6d4ecb42939eaf9ca6a03"
+                },
+                {
+                    "organizationId": "org-1",
+                    "actorType": "user",
+                    "actorId": "user-1",
+                    "resource": {
+                        "type": "crm.contact",
+                        "id": "c-1"
+                    },
+                    "outcome": "success",
+                    "metadata": {},
+                    "id": "01CHAIN0000000000000000004",
+                    "action": "crm.contact_deleted",
+                    "timestamp": "2026-05-17T12:00:03.000Z",
+                    "hashPrevious": "b99be950c3108de932e3db265fb4b9dec74f0c0cbda6d4ecb42939eaf9ca6a03",
+                    "hashCurrent": "323345c8f97de588b133d82c2697bd415e3b5cf670243c5fd52d9055c4728fe1"
+                }
+            ],
+            "expected": {
+                "ok": false,
+                "brokenAt": 2,
+                "code": "hash_previous_mismatch"
+            }
+        },
+        {
+            "name": "deleted_middle_event",
+            "description": "Event 1 removed. Event 2 still points at the hash of the event that is gone.",
+            "events": [
+                {
+                    "organizationId": "org-1",
+                    "actorType": "user",
+                    "actorId": "user-1",
+                    "resource": {
+                        "type": "crm.contact",
+                        "id": "c-1"
+                    },
+                    "outcome": "success",
+                    "metadata": {},
+                    "id": "01CHAIN0000000000000000001",
+                    "action": "crm.contact_created",
+                    "timestamp": "2026-05-17T12:00:00.000Z",
+                    "hashCurrent": "6130fff1217324c30e9cc59e88f3c91d252432119d55194620df6b1f27e758f4"
+                },
+                {
+                    "organizationId": "org-1",
+                    "actorType": "user",
+                    "actorId": "user-1",
+                    "resource": {
+                        "type": "crm.contact",
+                        "id": "c-1"
+                    },
+                    "outcome": "success",
+                    "metadata": {},
+                    "id": "01CHAIN0000000000000000003",
+                    "action": "crm.contact_merged",
+                    "timestamp": "2026-05-17T12:00:02.000Z",
+                    "hashPrevious": "772e954fabc9910374479d3e2d70a3ac88c3316292bcf11a0c7d6743116d350a",
+                    "hashCurrent": "b99be950c3108de932e3db265fb4b9dec74f0c0cbda6d4ecb42939eaf9ca6a03"
+                },
+                {
+                    "organizationId": "org-1",
+                    "actorType": "user",
+                    "actorId": "user-1",
+                    "resource": {
+                        "type": "crm.contact",
+                        "id": "c-1"
+                    },
+                    "outcome": "success",
+                    "metadata": {},
+                    "id": "01CHAIN0000000000000000004",
+                    "action": "crm.contact_deleted",
+                    "timestamp": "2026-05-17T12:00:03.000Z",
+                    "hashPrevious": "b99be950c3108de932e3db265fb4b9dec74f0c0cbda6d4ecb42939eaf9ca6a03",
+                    "hashCurrent": "323345c8f97de588b133d82c2697bd415e3b5cf670243c5fd52d9055c4728fe1"
+                }
+            ],
+            "expected": {
+                "ok": false,
+                "brokenAt": 1,
+                "code": "hash_previous_mismatch"
+            }
+        },
+        {
+            "name": "truncated_chain_head_removed",
+            "description": "The first event dropped. The new first event carries a hashPrevious where a first-of-day event must have none.",
+            "events": [
+                {
+                    "organizationId": "org-1",
+                    "actorType": "user",
+                    "actorId": "user-1",
+                    "resource": {
+                        "type": "crm.contact",
+                        "id": "c-1"
+                    },
+                    "outcome": "success",
+                    "metadata": {},
+                    "id": "01CHAIN0000000000000000002",
+                    "action": "crm.contact_updated",
+                    "timestamp": "2026-05-17T12:00:01.000Z",
+                    "hashPrevious": "6130fff1217324c30e9cc59e88f3c91d252432119d55194620df6b1f27e758f4",
+                    "hashCurrent": "772e954fabc9910374479d3e2d70a3ac88c3316292bcf11a0c7d6743116d350a"
+                },
+                {
+                    "organizationId": "org-1",
+                    "actorType": "user",
+                    "actorId": "user-1",
+                    "resource": {
+                        "type": "crm.contact",
+                        "id": "c-1"
+                    },
+                    "outcome": "success",
+                    "metadata": {},
+                    "id": "01CHAIN0000000000000000003",
+                    "action": "crm.contact_merged",
+                    "timestamp": "2026-05-17T12:00:02.000Z",
+                    "hashPrevious": "772e954fabc9910374479d3e2d70a3ac88c3316292bcf11a0c7d6743116d350a",
+                    "hashCurrent": "b99be950c3108de932e3db265fb4b9dec74f0c0cbda6d4ecb42939eaf9ca6a03"
+                },
+                {
+                    "organizationId": "org-1",
+                    "actorType": "user",
+                    "actorId": "user-1",
+                    "resource": {
+                        "type": "crm.contact",
+                        "id": "c-1"
+                    },
+                    "outcome": "success",
+                    "metadata": {},
+                    "id": "01CHAIN0000000000000000004",
+                    "action": "crm.contact_deleted",
+                    "timestamp": "2026-05-17T12:00:03.000Z",
+                    "hashPrevious": "b99be950c3108de932e3db265fb4b9dec74f0c0cbda6d4ecb42939eaf9ca6a03",
+                    "hashCurrent": "323345c8f97de588b133d82c2697bd415e3b5cf670243c5fd52d9055c4728fe1"
+                }
+            ],
+            "expected": {
+                "ok": false,
+                "brokenAt": 0,
+                "code": "hash_previous_mismatch"
+            }
+        },
+        {
+            "name": "truncated_chain_tail_removed",
+            "description": "The LAST event dropped. This chain still verifies — every remaining link is genuine, and replay alone cannot see a deletion at the tail. Detecting it requires an external anchor (a stored chain head or expected count). This fixture exists so that limit is asserted rather than assumed: ok:true here is the honest answer, not a gap in the verifier.",
+            "events": [
+                {
+                    "organizationId": "org-1",
+                    "actorType": "user",
+                    "actorId": "user-1",
+                    "resource": {
+                        "type": "crm.contact",
+                        "id": "c-1"
+                    },
+                    "outcome": "success",
+                    "metadata": {},
+                    "id": "01CHAIN0000000000000000001",
+                    "action": "crm.contact_created",
+                    "timestamp": "2026-05-17T12:00:00.000Z",
+                    "hashCurrent": "6130fff1217324c30e9cc59e88f3c91d252432119d55194620df6b1f27e758f4"
+                },
+                {
+                    "organizationId": "org-1",
+                    "actorType": "user",
+                    "actorId": "user-1",
+                    "resource": {
+                        "type": "crm.contact",
+                        "id": "c-1"
+                    },
+                    "outcome": "success",
+                    "metadata": {},
+                    "id": "01CHAIN0000000000000000002",
+                    "action": "crm.contact_updated",
+                    "timestamp": "2026-05-17T12:00:01.000Z",
+                    "hashPrevious": "6130fff1217324c30e9cc59e88f3c91d252432119d55194620df6b1f27e758f4",
+                    "hashCurrent": "772e954fabc9910374479d3e2d70a3ac88c3316292bcf11a0c7d6743116d350a"
+                },
+                {
+                    "organizationId": "org-1",
+                    "actorType": "user",
+                    "actorId": "user-1",
+                    "resource": {
+                        "type": "crm.contact",
+                        "id": "c-1"
+                    },
+                    "outcome": "success",
+                    "metadata": {},
+                    "id": "01CHAIN0000000000000000003",
+                    "action": "crm.contact_merged",
+                    "timestamp": "2026-05-17T12:00:02.000Z",
+                    "hashPrevious": "772e954fabc9910374479d3e2d70a3ac88c3316292bcf11a0c7d6743116d350a",
+                    "hashCurrent": "b99be950c3108de932e3db265fb4b9dec74f0c0cbda6d4ecb42939eaf9ca6a03"
+                }
+            ],
+            "expected": {
+                "ok": true
+            }
+        },
+        {
+            "name": "empty_chain",
+            "description": "No events. Vacuously intact — a verifier must not treat empty as corrupt.",
+            "events": [],
+            "expected": {
+                "ok": true
+            }
+        }
     ]
 }

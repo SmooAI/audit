@@ -22,11 +22,15 @@ from smooai_audit import (
     canonical_json,
     compute_event_hash,
     is_namespaced_action,
+    verify_chain,
 )
 
 _CORPUS_PATH = Path(__file__).resolve().parents[2] / "spec" / "parity-corpus.json"
-_FIXTURES: list[dict[str, Any]] = json.loads(_CORPUS_PATH.read_text(encoding="utf-8"))["fixtures"]
+_CORPUS: dict[str, Any] = json.loads(_CORPUS_PATH.read_text(encoding="utf-8"))
+_FIXTURES: list[dict[str, Any]] = _CORPUS["fixtures"]
 _FIXTURE_IDS = [f["name"] for f in _FIXTURES]
+_CHAIN_FIXTURES: list[dict[str, Any]] = _CORPUS["chainFixtures"]
+_CHAIN_IDS = [f["name"] for f in _CHAIN_FIXTURES]
 
 
 @pytest.mark.parametrize("fixture", _FIXTURES, ids=_FIXTURE_IDS)
@@ -46,6 +50,34 @@ def test_corpus_via_model_round_trip(fixture: dict[str, Any]) -> None:
     event = AuditEvent.model_validate(fixture["event"])
     assert canonical_json(event) == fixture["expectedCanonical"]
     assert compute_event_hash(event) == fixture["expectedHash"]
+
+
+# The corpus proved SEALING only — that a hash is reproducible in five languages.
+# It said nothing about whether any of them can DETECT a broken chain, which is
+# the property the word "tamper-evident" actually names. These are that half.
+def test_chain_corpus_has_broken_fixtures() -> None:
+    assert _CHAIN_FIXTURES, "chainFixtures missing from the corpus"
+    assert any(not f["expected"]["ok"] for f in _CHAIN_FIXTURES), "no tampered chain to detect"
+
+
+@pytest.mark.parametrize("fixture", _CHAIN_FIXTURES, ids=_CHAIN_IDS)
+def test_chain_corpus_verdict_matches(fixture: dict[str, Any]) -> None:
+    result = verify_chain(fixture["events"], fixture.get("genesisPreviousHash"))
+    expected = fixture["expected"]
+    assert result.ok == expected["ok"], fixture["description"]
+    if not expected["ok"]:
+        assert result.broken_at == expected["brokenAt"]
+        assert result.code is not None
+        assert result.code.value == expected["code"]
+
+
+@pytest.mark.parametrize("fixture", _CHAIN_FIXTURES, ids=_CHAIN_IDS)
+def test_chain_corpus_verdict_matches_via_model(fixture: dict[str, Any]) -> None:
+    # Same verdict through the typed model, not just the raw wire dicts — proves
+    # the pydantic aliases do not lose a chain field on the way in.
+    events = [AuditEvent.model_validate(e) for e in fixture["events"]]
+    result = verify_chain(events, fixture.get("genesisPreviousHash"))
+    assert result.ok == fixture["expected"]["ok"], fixture["description"]
 
 
 def test_canonical_sorts_keys_and_preserves_array_order() -> None:

@@ -63,6 +63,8 @@ Audit trails are only trustworthy if a hash means the same thing everywhere. The
 
 **All five test suites load this exact file** ([TS](./src/parity-corpus.spec.ts) · [Python](./python/tests/test_audit.py) · [Rust](./rust/audit/tests/parity.rs) · [Go](./go/audit_test.go) · [.NET](./dotnet/tests/SmooAI.Audit.Tests/AuditTests.cs)) and assert byte-for-byte equality — so a chain written by a Go service verifies cleanly in a Rust or TypeScript reader. A divergence is a CI failure, not a production surprise.
 
+The corpus has a second half, `chainFixtures`: 11 whole chains, sealed by the real builder and then genuinely tampered with — a mutated field, a backdated timestamp, a reordered pair, a rewritten `hashPrevious`, a deleted middle event, a truncated head. Each carries the verdict every language must return (`ok`, `brokenAt`, and a shared failure code), so all five prove they **detect** tampering, not merely that they can hash. Sealing parity without detection parity is how a library ends up tamper-evident in one language and tamper-*oblivious* in four.
+
 ### 🔗 Tamper-evident hash chain
 
 Each event's `hashCurrent` is `SHA-256(canonical-JSON(event minus hashCurrent))`, and every event carries `hashPrevious` — the prior event's hash in the per-org-per-day chain. Rewrite or delete any event and every subsequent hash stops verifying.
@@ -80,7 +82,9 @@ flowchart LR
   class E1,E2,E3 teal
 ```
 
-Verification replays the chain: recompute every hash and confirm each `hashPrevious` matches the prior `hashCurrent`. A ready-made `verifyChain()` helper ships in **TypeScript today** ([`src/hash.ts`](./src/hash.ts)); in the other languages you replay with the same `computeEventHash` primitive — see the [status table](#honest-per-language-status).
+Verification replays the chain: recompute every hash and confirm each `hashPrevious` matches the prior `hashCurrent`. A ready-made verifier ships in **all five languages** — `verifyChain` (TS) · `verify_chain` (Python, Rust) · `VerifyChain` (Go) · `HashChain.Verify` (.NET) — and each returns the same verdict: `ok`, the index of the first broken link, and a shared failure code (`hash_previous_mismatch` when the LINK is wrong, `hash_current_mismatch` when the event BODY was edited after sealing). Pass the chain head you already hold when verifying a slice that continues an existing chain rather than one starting at the beginning of the org's day.
+
+> **What replay cannot see.** Deleting events from the **tail** of a chain leaves something that still verifies — every remaining link is genuine. Catching that needs an external anchor (a stored chain head, an expected count) compared against the last event's `hashCurrent`. `ok` means *nothing here was altered*, not *nothing is missing*. The corpus pins this as an explicit fixture (`truncated_chain_tail_removed`, expected `ok: true`) so the limit stays visible instead of being mistaken for coverage.
 
 ### 🔎 Trace correlation, outside the hash
 
@@ -103,6 +107,7 @@ Every language exposes the same four things:
 | `AuditEvent` | The canonical event schema — `id`, `organizationId`, `actorType`, `actorId`, `action`, `resource {type, id}`, `outcome`, `metadata`, `timestamp`, plus optional context (`actorEmail`, `reason`, `sessionId`, `conversationId`, `ipAddress`, `userAgent`, `geoCountry`, `diff`) and the chain fields `hashPrevious?` / `hashCurrent?`. |
 | `canonicalJson(event)` | Deterministic, byte-identical JSON serialization. |
 | `computeEventHash(event)` / `buildHashChain(events)` | The per-org-per-day SHA-256 hash chain (`HashChain.ComputeEventHash` / `HashChain.Build` in .NET). |
+| `verifyChain(events, genesisPreviousHash?)` | Replays the chain and reports the first broken link (`HashChain.Verify` in .NET). |
 | `AuditClient` / `emit(event)` | Seals the event (stamps `hashCurrent`) and POSTs the canonical envelope to a configurable ingest endpoint with a bearer token. |
 
 ## Install
@@ -201,10 +206,9 @@ The core contract — canonical JSON, the hash chain, the emit envelope, trace c
 | Envelope trace correlation (optional OTel) | ✅ | ✅ | ✅ | ✅ | ✅ |
 | `emit` client | ✅ async | ✅ sync | ✅ async | ✅ sync (ctx) | ✅ async |
 | Retry with backoff on transient emit failure | ✅ | — | — | — | — |
-| Ready-made `verifyChain()` helper | ✅ | —¹ | — | — | — |
+| Chain verification (corpus-verified against 11 tampered chains) | ✅ | ✅ | ✅ | ✅ | ✅ |
 | Chain builder name | `buildHashChain` | `build_hash_chain` | `build_hash_chain` | `BuildHashChain` | `HashChain.Build` |
-
-¹ Python documents the replay procedure (recompute every hash, confirm each `hash_previous` matches the prior `hash_current`) but does not yet ship the helper; the same applies to Rust, Go, and .NET — verification there means replaying with `computeEventHash`, which the parity corpus guarantees agrees with TS byte-for-byte.
+| Chain verifier name | `verifyChain` | `verify_chain` | `verify_chain` | `VerifyChain` | `HashChain.Verify` |
 
 Error posture also differs by design: the TypeScript, Rust, Go, and .NET clients surface emit failures to the caller; the **Python client swallows transport errors by default** (audit emission should not take down the request path) — set `swallow_errors=False` or pass an `on_error` hook to change that.
 
@@ -217,7 +221,7 @@ pnpm install
 pnpm check-all   # typecheck + lint + test + build across all languages
 ```
 
-Parity is the contract: any change to `canonicalJson` or the hash chain must update [`spec/parity-corpus.json`](./spec/parity-corpus.json) and pass in **all five** languages — a canonical/hash change in one language is a breaking, cross-language change.
+Parity is the contract: any change to `canonicalJson` or the hash chain must update [`spec/parity-corpus.json`](./spec/parity-corpus.json) and pass in **all five** languages — a canonical/hash change in one language is a breaking, cross-language change. The `chainFixtures` half is generated, never hand-written: `pnpm tsdown && node scripts/gen-chain-fixtures.mjs`. A hand-typed expected hash is a hash nobody computed.
 
 ## 🧩 Part of Smoo AI
 

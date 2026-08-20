@@ -20,7 +20,7 @@ pub use crate::canonical::canonical_json;
 pub use crate::client::{AuditClient, AuditClientOptions};
 pub use crate::envelope::{envelope_json, TraceContext};
 pub use crate::error::AuditError;
-pub use crate::hash::{build_hash_chain, compute_event_hash};
+pub use crate::hash::{build_hash_chain, compute_event_hash, verify_chain, ChainVerification, VerifyFailureCode};
 pub use crate::schema::{actions, is_namespaced_action, ActorType, AuditDiff, AuditEvent, AuditResource, Outcome, AUDIT_ACTIONS};
 
 #[cfg(test)]
