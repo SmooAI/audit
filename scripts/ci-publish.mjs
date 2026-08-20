@@ -4,7 +4,6 @@
  *
  * Runs the build, attempts changeset publish (which publishes to npm),
  * and gracefully handles the case where the version already exists on npm.
- * Then syncs versions to other language packages.
  */
 import { execSync } from "node:child_process";
 import { readFileSync } from "node:fs";
@@ -76,5 +75,8 @@ if (!npmPublished) {
   }
 }
 
-// Step 3: Sync versions to other language packages
-run("pnpm version:sync");
+// NO version sync here. It used to run at this point, which mutated the CI
+// workspace's manifests AFTER the release commit was already made — so every
+// git tag shipped 0.0.0 constants. The sync now runs in the changesets
+// `version` lifecycle, where the bumped manifests get committed. See
+// scripts/sync-versions.mjs.

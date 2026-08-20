@@ -72,6 +72,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install
 
+      - name: Version consistency
+        run: pnpm version:check
+
       - name: Typecheck
         run: pnpm typecheck
 
@@ -93,6 +96,13 @@ jobs:
         with:
           commit: "🦋 New version release"
           title: "🦋 New version release"
+          # `pnpm run version` = `changeset version && sync-versions`. Without this
+          # input the action runs `changeset version` directly and the package.json
+          # `version` script never fires — which is how the non-TS manifests stayed
+          # at 0.0.0 while npm/PyPI/NuGet shipped 0.2.0. The action commits the
+          # working tree after this step, so the synced manifests land in the
+          # release commit.
+          version: pnpm run version
           publish: pnpm ci:publish
           createGithubReleases: true
         env:
@@ -111,9 +121,11 @@ jobs:
 
       - name: Publish smooai-audit to crates.io
         if: steps.changesets.outputs.published == 'true'
-        # --allow-dirty is needed because version:sync modifies Cargo.toml/Cargo.lock
-        # without committing them during the CI publish flow
-        run: cargo publish --allow-dirty --manifest-path rust/audit/Cargo.toml
+        # --locked, never --allow-dirty: the manifests are synced in the changesets
+        # `version` lifecycle and committed with the release, so the tree is clean
+        # and Cargo.lock already carries the released version. A failure here means
+        # the lockfile is genuinely stale — refresh and commit it, don't loosen the flag.
+        run: cargo publish --locked --manifest-path rust/audit/Cargo.toml
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.SMOOAI_CARGO_REGISTRY_TOKEN }}
 
@@ -122,6 +134,11 @@ jobs:
         run: |
           VERSION=$(node -p "require('./package.json').version")
           TAG="go/v${VERSION}"
+          # The tag major and the go.mod module-path suffix must agree or
+          # `go get` resolves nothing. version:check enforces the same rule on
+          # every PR; re-assert it here because this is the step that mints the
+          # tag the module proxy will cache forever.
+          pnpm version:check
           echo "Creating Go module tag: ${TAG}"
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"

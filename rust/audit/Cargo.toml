@@ -1,6 +1,6 @@
 [package]
 name = "smooai-audit"
-version = "0.0.0"
+version = "0.2.0"
 edition = "2021"
 description = "Polyglot client SDK for tamper-evident, SQL-queryable audit logging — Rust port of @smooai/audit."
 license = "MIT"
