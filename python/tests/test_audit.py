@@ -8,7 +8,9 @@ the corpus.
 
 from __future__ import annotations
 
+import asyncio
 import json
+import urllib.error
 from pathlib import Path
 from typing import Any
 
@@ -30,6 +32,7 @@ _CORPUS: dict[str, Any] = json.loads(_CORPUS_PATH.read_text(encoding="utf-8"))
 _FIXTURES: list[dict[str, Any]] = _CORPUS["fixtures"]
 _FIXTURE_IDS = [f["name"] for f in _FIXTURES]
 _CHAIN_FIXTURES: list[dict[str, Any]] = _CORPUS["chainFixtures"]
+_RETRY_POLICY: dict[str, Any] = _CORPUS["retryPolicy"]
 _CHAIN_IDS = [f["name"] for f in _CHAIN_FIXTURES]
 
 
@@ -120,17 +123,8 @@ def test_is_namespaced_action() -> None:
     assert not is_namespaced_action("Crm.contactCreated")
 
 
-def test_emit_swallows_transport_errors_by_default() -> None:
-    captured: list[Exception] = []
-    client = AuditClient(
-        AuditClientOptions(
-            endpoint="http://127.0.0.1:1/audit",  # nothing listening → connection refused
-            token="t",
-            timeout=0.5,
-            on_error=captured.append,
-        )
-    )
-    event = AuditEvent(
+def _sample_event() -> AuditEvent:
+    return AuditEvent(
         id="e-1",
         organization_id="org-1",
         actor_type="user",
@@ -141,7 +135,78 @@ def test_emit_swallows_transport_errors_by_default() -> None:
         metadata={},
         timestamp="2026-05-17T12:00:00.000Z",
     )
-    client.emit(event)  # must not raise
+
+
+def _client(**overrides: Any) -> AuditClient:
+    options: dict[str, Any] = dict(
+        endpoint="http://127.0.0.1:1/audit",  # nothing listening → connection refused
+        token="t",
+        timeout=0.5,
+        retry_backoff_ms=1,
+    )
+    options.update(overrides)
+    return AuditClient(AuditClientOptions(**options))
+
+
+def test_emit_raises_by_default() -> None:
+    # This default USED to be swallow-on-failure, which meant a misconfigured
+    # endpoint dropped every audit event and reported success. Fail-open on the
+    # path that carries the record is the defect, not the feature.
+    captured: list[Exception] = []
+    with pytest.raises(Exception):  # noqa: B017, PT011 — any transport error qualifies
+        _client(on_error=captured.append).emit(_sample_event())
+    assert len(captured) == 1, "on_error must fire even when the error is re-raised"
+
+
+def test_emit_can_opt_into_swallowing() -> None:
+    captured: list[Exception] = []
+    _client(swallow_errors=True, on_error=captured.append).emit(_sample_event())  # must not raise
+    assert len(captured) == 1
+
+
+def test_emit_retries_transport_errors_maxattempts_times() -> None:
+    attempts = 0
+    client = _client()
+
+    def counting_post(_body: bytes) -> None:
+        nonlocal attempts
+        attempts += 1
+        raise OSError("connection refused")
+
+    client._post = counting_post  # pyright: ignore[reportAttributeAccessIssue] — narrow seam for counting attempts
+    with pytest.raises(OSError, match="connection refused"):
+        client.emit(_sample_event())
+    assert attempts == _RETRY_POLICY["maxAttempts"]
+
+
+def test_emit_fails_fast_on_4xx() -> None:
+    attempts = 0
+    client = _client()
+
+    def failing_post(_body: bytes) -> None:
+        nonlocal attempts
+        attempts += 1
+        raise urllib.error.HTTPError("http://x", 400, "bad request", None, None)  # pyright: ignore[reportArgumentType]
+
+    client._post = failing_post  # pyright: ignore[reportAttributeAccessIssue] — narrow seam for counting attempts
+    with pytest.raises(urllib.error.HTTPError):
+        client.emit(_sample_event())
+    assert attempts == 1, "a 4xx will say the same thing on the next attempt"
+
+
+def test_client_defaults_match_the_shared_retry_policy() -> None:
+    # Five hand-written implementations of the same numbers are five chances to
+    # drift. The corpus is the one place they are written down.
+    options = AuditClientOptions(endpoint="http://x", token="t")
+    assert options.max_retries == _RETRY_POLICY["maxAttempts"]
+    assert options.retry_backoff_ms == _RETRY_POLICY["baseBackoffMs"]
+    assert _RETRY_POLICY["backoffMultiplier"] == 2
+
+
+def test_emit_async_runs_emit_off_the_loop() -> None:
+    captured: list[Exception] = []
+    client = _client(swallow_errors=True, on_error=captured.append)
+    asyncio.run(client.emit_async(_sample_event()))
     assert len(captured) == 1
 
 

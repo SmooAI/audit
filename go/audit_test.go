@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"go.opentelemetry.io/otel/trace"
 )
@@ -37,6 +38,13 @@ type corpus struct {
 		Events              []AuditEvent  `json:"events"`
 		Expected            expectedChain `json:"expected"`
 	} `json:"chainFixtures"`
+	// RetryPolicy is the emit client's default retry behaviour, written down once
+	// so five hand-written implementations cannot quietly diverge.
+	RetryPolicy struct {
+		MaxAttempts       int `json:"maxAttempts"`
+		BaseBackoffMs     int `json:"baseBackoffMs"`
+		BackoffMultiplier int `json:"backoffMultiplier"`
+	} `json:"retryPolicy"`
 }
 
 type expectedChain struct {
@@ -368,5 +376,79 @@ func TestChainCorpus(t *testing.T) {
 	}
 	if !sawBroken {
 		t.Fatal("no tampered chain to detect — the corpus would prove nothing about verification")
+	}
+}
+
+// --- Emit retry ------------------------------------------------------------------
+// An audit event that silently fails to emit is a hole in the record, so every
+// client retries what a retry can fix — and only that.
+
+func TestEmitDefaultsMatchTheSharedRetryPolicy(t *testing.T) {
+	policy := loadCorpus(t).RetryPolicy
+	if DefaultMaxRetries != policy.MaxAttempts {
+		t.Fatalf("DefaultMaxRetries = %d, corpus says %d", DefaultMaxRetries, policy.MaxAttempts)
+	}
+	want := time.Duration(policy.BaseBackoffMs) * time.Millisecond
+	if DefaultRetryBackoff != want {
+		t.Fatalf("DefaultRetryBackoff = %v, corpus says %v", DefaultRetryBackoff, want)
+	}
+	if policy.BackoffMultiplier != 2 {
+		t.Fatalf("this client doubles the backoff; corpus says multiplier %d", policy.BackoffMultiplier)
+	}
+}
+
+func TestEmitRetriesServerErrorsThenSucceeds(t *testing.T) {
+	attempts := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		attempts++
+		if attempts < 2 {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	client := &AuditClient{Endpoint: server.URL, RetryBackoff: time.Millisecond}
+	if err := client.Emit(context.Background(), sampleEvent()); err != nil {
+		t.Fatalf("Emit: %v", err)
+	}
+	if attempts != 2 {
+		t.Fatalf("attempts = %d, want 2", attempts)
+	}
+}
+
+func TestEmitExhaustsMaxAttemptsOnServerErrors(t *testing.T) {
+	policy := loadCorpus(t).RetryPolicy
+	attempts := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		attempts++
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	client := &AuditClient{Endpoint: server.URL, RetryBackoff: time.Millisecond}
+	if err := client.Emit(context.Background(), sampleEvent()); err == nil {
+		t.Fatal("Emit must return the final error, never swallow it")
+	}
+	if attempts != policy.MaxAttempts {
+		t.Fatalf("attempts = %d, corpus maxAttempts = %d", attempts, policy.MaxAttempts)
+	}
+}
+
+func TestEmitFailsFastOn4xx(t *testing.T) {
+	attempts := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		attempts++
+		w.WriteHeader(http.StatusBadRequest)
+	}))
+	defer server.Close()
+
+	client := &AuditClient{Endpoint: server.URL, RetryBackoff: time.Millisecond}
+	if err := client.Emit(context.Background(), sampleEvent()); err == nil {
+		t.Fatal("expected an error on 400")
+	}
+	if attempts != 1 {
+		t.Fatalf("attempts = %d, want 1 — a 4xx will say the same thing next time", attempts)
 	}
 }

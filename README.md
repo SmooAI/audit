@@ -41,12 +41,13 @@ Native in **TypeScript · Python · Rust · Go · .NET**, with identical semanti
 
 ## Feature tour
 
-|     | Capability                                                    | What you get                                                                     |
-| --- | ------------------------------------------------------------- | -------------------------------------------------------------------------------- |
-| 🧬  | [**One corpus, five languages**](#-one-corpus-five-languages) | Byte-for-byte parity, asserted in every language's CI — not claimed, tested      |
-| 🔗  | [**Tamper-evident hash chain**](#-tamper-evident-hash-chain)  | Per-org-per-day SHA-256 chain; edit one event, break every later link            |
-| 🔎  | [**Trace correlation**](#-trace-correlation-outside-the-hash) | `traceId`/`spanId` on the envelope — never inside the hashed event               |
-| 📦  | [**Version-lockstep releases**](#install)                     | v0.2.0 on npm, PyPI, crates.io, NuGet, and the Go module — same commit, same tag |
+|     | Capability                                                      | What you get                                                                     |
+| --- | --------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| 🧬  | [**One corpus, five languages**](#-one-corpus-five-languages)   | Byte-for-byte parity, asserted in every language's CI — not claimed, tested      |
+| 🔗  | [**Tamper-evident hash chain**](#-tamper-evident-hash-chain)    | Per-org-per-day SHA-256 chain; edit one event, break every later link            |
+| 🔎  | [**Trace correlation**](#-trace-correlation-outside-the-hash)   | `traceId`/`spanId` on the envelope — never inside the hashed event               |
+| ♻️  | [**Same retry policy everywhere**](#honest-per-language-status) | 3 attempts, doubling backoff, 4xx fails fast — asserted from one shared policy   |
+| 📦  | [**Version-lockstep releases**](#install)                       | v0.2.0 on npm, PyPI, crates.io, NuGet, and the Go module — same commit, same tag |
 
 ### 🧬 One corpus, five languages
 
@@ -204,17 +205,22 @@ await client.EmitAsync(new AuditEvent
 
 The core contract — canonical JSON, the hash chain, the emit envelope, trace correlation — is **complete and parity-tested in all five languages**. The surfaces around it are not yet symmetric, and you should know exactly where:
 
-| Capability                                                      |        TS        |       Python       |        Rust        |        Go        |        .NET        |
-| --------------------------------------------------------------- | :--------------: | :----------------: | :----------------: | :--------------: | :----------------: |
-| Canonical JSON + hash chain (parity-corpus-verified)            |        ✅        |         ✅         |         ✅         |        ✅        |         ✅         |
-| Envelope trace correlation (optional OTel)                      |        ✅        |         ✅         |         ✅         |        ✅        |         ✅         |
-| `emit` client                                                   |     ✅ async     |      ✅ sync       |      ✅ async      |  ✅ sync (ctx)   |      ✅ async      |
-| Retry with backoff on transient emit failure                    |        ✅        |         —          |         —          |        —         |         —          |
-| Chain verification (corpus-verified against 11 tampered chains) |        ✅        |         ✅         |         ✅         |        ✅        |         ✅         |
-| Chain builder name                                              | `buildHashChain` | `build_hash_chain` | `build_hash_chain` | `BuildHashChain` | `HashChain.Build`  |
-| Chain verifier name                                             |  `verifyChain`   |   `verify_chain`   |   `verify_chain`   |  `VerifyChain`   | `HashChain.Verify` |
+| Capability                                                      |        TS        |         Python         |        Rust        |        Go         |        .NET        |
+| --------------------------------------------------------------- | :--------------: | :--------------------: | :----------------: | :---------------: | :----------------: |
+| Canonical JSON + hash chain (parity-corpus-verified)            |        ✅        |           ✅           |         ✅         |        ✅         |         ✅         |
+| Envelope trace correlation (optional OTel)                      |        ✅        |           ✅           |         ✅         |        ✅         |         ✅         |
+| `emit` client                                                   |     ✅ async     | ✅ sync + `emit_async` |      ✅ async      | ✅ sync (`go` it) |      ✅ async      |
+| Retry with backoff on transient emit failure                    |        ✅        |           ✅           |         ✅         |        ✅         |         ✅         |
+| Emit failure surfaces to the caller                             |        ✅        |           ✅           |         ✅         |        ✅         |         ✅         |
+| Chain verification (corpus-verified against 11 tampered chains) |        ✅        |           ✅           |         ✅         |        ✅         |         ✅         |
+| Chain builder name                                              | `buildHashChain` |   `build_hash_chain`   | `build_hash_chain` | `BuildHashChain`  | `HashChain.Build`  |
+| Chain verifier name                                             |  `verifyChain`   |     `verify_chain`     |   `verify_chain`   |   `VerifyChain`   | `HashChain.Verify` |
 
-Error posture also differs by design: the TypeScript, Rust, Go, and .NET clients surface emit failures to the caller; the **Python client swallows transport errors by default** (audit emission should not take down the request path) — set `swallow_errors=False` or pass an `on_error` hook to change that.
+**Retry and error posture are now the same everywhere**, and the numbers are asserted rather than restated: `retryPolicy` in [`spec/parity-corpus.json`](./spec/parity-corpus.json) holds the defaults (3 attempts, 100 ms base backoff, doubling) and every language's test suite checks its own client against it. Transport errors and HTTP 5xx are retried; a 4xx is surfaced immediately, because it will say the same thing on the next attempt. A retried POST carries the **same** canonical bytes — ingest dedupes on the event hash.
+
+Failures that survive the retries are **raised in every language**. Python's client used to swallow them by default, which meant a misconfigured endpoint or an expired token dropped every event and reported success; the gap stayed invisible until someone went looking for a trail that was never written. `swallow_errors=True` is still available as an explicit opt-in, and `on_error` fires either way.
+
+Concurrency differs where the language differs, not by accident: Python adds `emit_async` (the blocking `urllib` POST moved off the event loop with `asyncio.to_thread`, rather than a second transport to keep in parity), and Go's `Emit(ctx, event)` stays synchronous because `go client.Emit(ctx, event)` is how Go does async — context cancellation is honoured both in flight and between retries.
 
 ## Development
 

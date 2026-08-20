@@ -17,7 +17,7 @@ pub mod schema;
 
 pub use crate::canonical::canonical_json;
 #[cfg(feature = "client")]
-pub use crate::client::{AuditClient, AuditClientOptions};
+pub use crate::client::{AuditClient, AuditClientOptions, DEFAULT_MAX_RETRIES, DEFAULT_RETRY_BACKOFF_MS};
 pub use crate::envelope::{envelope_json, TraceContext};
 pub use crate::error::AuditError;
 pub use crate::hash::{build_hash_chain, compute_event_hash, verify_chain, ChainVerification, VerifyFailureCode};

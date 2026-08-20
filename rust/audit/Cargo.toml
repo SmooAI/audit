@@ -16,7 +16,7 @@ readme = "README.md"
 # that publishes events onto its own transport like NATS) can depend with
 # `default-features = false` to drop the reqwest + async-runtime pull entirely.
 default = ["client"]
-client = ["dep:reqwest"]
+client = ["dep:reqwest", "dep:tokio"]
 # W3C trace correlation on the emit ENVELOPE (never inside the hashed event).
 # Off by default: an OSS audit SDK must not force OpenTelemetry on anyone. With
 # the feature off, `TraceContext::current()` is an empty-struct no-op and nothing
@@ -33,6 +33,9 @@ thiserror = "1"
 # not a re-serialization. reqwest brings its own async runtime. Optional so
 # schema-only consumers avoid it (see the `client` feature above).
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"], optional = true }
+# Retry backoff between emit attempts. `time` only — reqwest already pulls tokio
+# in, so this adds a feature flag, not a runtime.
+tokio = { version = "1", default-features = false, features = ["time"], optional = true }
 # Trace correlation, OPTIONAL by design (see the `otel` feature above).
 opentelemetry = { version = "0.32", optional = true, default-features = false, features = [
   "trace",
@@ -45,6 +48,9 @@ tracing = { version = "0.1", optional = true }
 tracing-opentelemetry = { version = "0.33", optional = true, default-features = false }
 
 [dev-dependencies]
+# #[tokio::test] for the async emit-retry tests. The client already pulls tokio
+# in via reqwest; this adds the macro + multi-thread runtime for tests only.
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "time"] }
 # The correlation tests drive a real tracer so the assertion is on the ids that
 # actually reach the envelope, not on our own builder.
 opentelemetry_sdk = { version = "0.32", features = ["trace"] }
