@@ -27,7 +27,7 @@ TypeScript uses oxlint + oxfmt (4-space indent, 160-char lines, trailing commas)
 
 ## Parity Is the Contract
 
-Canonicalization and hashing MUST be identical across languages. Any change to `canonicalJson` or the hash chain must update the shared parity corpus and pass in TypeScript, Python, Rust, Go, and .NET. `TODO(audit-impl)` marks logic still to be implemented against that corpus.
+Canonicalization and hashing MUST be identical across languages. Any change to `canonicalJson` or the hash chain must update the shared parity corpus and pass in TypeScript, Python, Rust, Go, and .NET. All five implementations are complete and assert byte-for-byte against `spec/parity-corpus.json`.
 
 ## Testing Guidelines
 
